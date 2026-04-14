@@ -135,6 +135,12 @@ export default function QuoteForm({ outcome, address, onSubmit, onClose }: Quote
         </div>
 
         <div className="px-5 py-4 space-y-5">
+          {/* Address — big visible pin strip */}
+          <div className="flex items-center gap-2 bg-blue-50 border border-blue-100 rounded-xl px-3 py-2.5">
+            <span className="text-lg">📍</span>
+            <span className="text-sm font-semibold text-blue-900 flex-1 truncate">{address || 'Address not set'}</span>
+          </div>
+
           {/* Name */}
           <div>
             <label className="block text-sm font-medium text-gray-600 mb-1">Customer Name</label>

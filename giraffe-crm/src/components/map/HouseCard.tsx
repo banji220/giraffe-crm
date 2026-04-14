@@ -124,6 +124,10 @@ export default function HouseCard({
 
   // Hydrated data
   const [events, setEvents] = useState<TimelineEvent[]>([])
+  const [houseNotes, setHouseNotes] = useState<string>('')
+  const [notesDraft, setNotesDraft] = useState<string>('')
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [savingNotes, setSavingNotes] = useState(false)
   const [openLead, setOpenLead] = useState<{
     id: string
     state: LeadState
@@ -154,14 +158,19 @@ export default function HouseCard({
   useEffect(() => {
     let cancelled = false
     const hydrate = async () => {
-      const [knocksRes, leadsRes, jobsRes, customersRes] = await Promise.all([
+      const [knocksRes, leadsRes, jobsRes, customersRes, houseRes] = await Promise.all([
         supabase.from('knocks').select('id, outcome, note, follow_up_at, created_at').eq('house_id', house.id).order('created_at', { ascending: false }),
         supabase.from('leads').select('id, state, full_name, phone, email, notes, final_price, anchor_price, window_count, created_at, updated_at').eq('house_id', house.id).order('created_at', { ascending: false }),
         supabase.from('jobs').select('id, scheduled_at, completed_at, status, price, paid_amount, created_at').eq('house_id', house.id).order('scheduled_at', { ascending: false }),
         supabase.from('customers').select('id, full_name, phone, lifetime_value, total_jobs, last_job_at, created_at').eq('house_id', house.id).limit(1),
+        supabase.from('houses').select('notes').eq('id', house.id).single(),
       ])
 
       if (cancelled) return
+
+      const persistedNotes = (houseRes.data as any)?.notes ?? ''
+      setHouseNotes(persistedNotes)
+      setNotesDraft(persistedNotes)
 
       // Open lead = newest lead in active states
       const activeLead = leadsRes.data?.find(l => ['new', 'quoted', 'won'].includes(l.state as string)) ?? null
@@ -335,6 +344,17 @@ export default function HouseCard({
   const nameDisplay = openLead?.full_name ?? customer?.full_name ?? null
 
   // ─── Handlers ──────────────────────────────────────────────────────
+  const handleSaveNotes = async () => {
+    setSavingNotes(true)
+    const trimmed = notesDraft.trim()
+    const { error } = await supabase.from('houses').update({ notes: trimmed || null }).eq('id', house.id)
+    if (!error) {
+      setHouseNotes(trimmed)
+      setEditingNotes(false)
+    }
+    setSavingNotes(false)
+  }
+
   const handleKnockTap = async (outcome: KnockOutcome, needsQuote: boolean) => {
     if (needsQuote) { onOpenQuote(outcome); return }
     if (outcome === 'come_back') { setShowComeBackPicker(true); return }
@@ -363,23 +383,69 @@ export default function HouseCard({
           <div className="w-10 h-1.5 rounded-full bg-gray-300" />
         </div>
 
-        {/* Address */}
+        {/* Address + contact */}
         <div className="px-5 pt-2 pb-3">
-          <h2 className="text-lg font-bold text-gray-900 leading-tight">
-            {house.fullAddress || 'New House'}
-          </h2>
-          {nameDisplay && (
-            <p className="text-sm text-gray-500 mt-0.5">{nameDisplay}{phone ? ` · ${phone}` : ''}</p>
-          )}
-          {openLead?.email && (
-            <a href={`mailto:${openLead.email}`} className="text-sm text-blue-600 mt-0.5 block truncate active:text-blue-800">
-              {openLead.email}
-            </a>
-          )}
-          {openLead?.notes && (
-            <div className="mt-2 bg-amber-50 border-l-4 border-amber-300 rounded px-3 py-2">
-              <div className="text-[10px] uppercase tracking-widest text-amber-700 font-bold mb-0.5">Notes</div>
-              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-snug">{openLead.notes}</p>
+          <div className="flex items-start gap-2">
+            <span className="text-lg mt-0.5">📍</span>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-lg font-bold text-gray-900 leading-tight">
+                {house.fullAddress || 'New House'}
+              </h2>
+              {nameDisplay && (
+                <p className="text-sm text-gray-500 mt-0.5">{nameDisplay}{phone ? ` · ${phone}` : ''}</p>
+              )}
+              {openLead?.email && (
+                <a href={`mailto:${openLead.email}`} className="text-sm text-blue-600 mt-0.5 block truncate active:text-blue-800">
+                  {openLead.email}
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Notes — always-editable sticky note */}
+        <div className="px-5 pb-4">
+          {!editingNotes ? (
+            <button
+              onClick={() => setEditingNotes(true)}
+              className="w-full text-left bg-amber-50 border-l-4 border-amber-400 rounded-r-xl px-4 py-3 active:bg-amber-100 transition-colors"
+            >
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[10px] uppercase tracking-widest text-amber-700 font-bold">Notes</span>
+                <span className="text-xs text-amber-700 font-semibold">{houseNotes ? 'Edit ✏️' : 'Add +'}</span>
+              </div>
+              {houseNotes ? (
+                <p className="text-sm text-gray-800 whitespace-pre-wrap leading-snug">{houseNotes}</p>
+              ) : (
+                <p className="text-sm text-amber-600/70 italic">Dogs, gate codes, preferences, anything to remember…</p>
+              )}
+            </button>
+          ) : (
+            <div className="bg-amber-50 border-l-4 border-amber-400 rounded-r-xl px-4 py-3">
+              <div className="text-[10px] uppercase tracking-widest text-amber-700 font-bold mb-2">Notes</div>
+              <textarea
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+                rows={4}
+                autoFocus
+                placeholder="Dogs, gate codes, preferences, anything to remember…"
+                className="w-full bg-white border border-amber-200 rounded-lg px-3 py-2 text-sm text-gray-800 focus:border-amber-500 outline-none resize-none"
+              />
+              <div className="flex gap-2 mt-2">
+                <button
+                  onClick={handleSaveNotes}
+                  disabled={savingNotes}
+                  className="flex-1 bg-amber-600 text-white font-bold py-2.5 rounded-lg text-sm active:bg-amber-700 disabled:opacity-50"
+                >
+                  {savingNotes ? 'Saving…' : 'Save'}
+                </button>
+                <button
+                  onClick={() => { setNotesDraft(houseNotes); setEditingNotes(false) }}
+                  className="px-4 py-2.5 text-sm text-gray-600 font-medium rounded-lg active:bg-gray-100"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
           )}
         </div>
