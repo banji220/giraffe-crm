@@ -1,6 +1,7 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import AuthGate from '@/components/auth/AuthGate'
 
 // mapbox-gl accesses `window` on import — must skip SSR entirely
 const MapView = dynamic(() => import('@/components/map/MapView'), {
@@ -16,5 +17,9 @@ const MapView = dynamic(() => import('@/components/map/MapView'), {
 })
 
 export default function MapPage() {
-  return <MapView />
+  return (
+    <AuthGate>
+      <MapView />
+    </AuthGate>
+  )
 }

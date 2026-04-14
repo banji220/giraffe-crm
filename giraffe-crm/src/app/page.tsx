@@ -2,8 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
+import AuthGate from '@/components/auth/AuthGate'
 
 export default function TodayPage() {
+  return (
+    <AuthGate>
+      <TodayPageInner />
+    </AuthGate>
+  )
+}
+
+function TodayPageInner() {
   const [status, setStatus] = useState<'loading' | 'connected' | 'error'>('loading')
   const [houseCount, setHouseCount] = useState<number>(0)
   const [leadCount, setLeadCount] = useState<number>(0)

@@ -5,6 +5,7 @@ import { createClient } from '@/lib/supabase/client'
 import { reverseGeocode } from '@/lib/geo'
 import HouseCard from '@/components/map/HouseCard'
 import { type SheetHouse } from '@/components/map/KnockSheet'
+import SessionChip from '@/components/auth/SessionChip'
 import QuoteForm, { type QuoteData } from '@/components/quote/QuoteForm'
 import type { KnockOutcome, HouseState } from '@/types/database'
 
@@ -648,6 +649,7 @@ export default function MapView() {
 
       {/* Top bar: Back button + house count */}
       <div className="absolute top-3 left-3 right-3 z-10 flex items-center gap-2 pointer-events-none">
+        <SessionChip />
         <a
           href="/"
           className="pointer-events-auto bg-white/90 backdrop-blur-sm rounded-xl px-3.5 py-2.5 shadow-lg text-sm font-semibold text-gray-700 active:bg-gray-100 flex-shrink-0"
