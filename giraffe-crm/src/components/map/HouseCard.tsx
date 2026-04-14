@@ -119,6 +119,9 @@ export default function HouseCard({
   const [loading, setLoading] = useState(false)
   const [showComeBackPicker, setShowComeBackPicker] = useState(false)
   const [comeBackDate, setComeBackDate] = useState('')
+  const [comeBackName, setComeBackName] = useState('')
+  const [comeBackPhone, setComeBackPhone] = useState('')
+  const [comeBackNote, setComeBackNote] = useState('')
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [showAllOutcomes, setShowAllOutcomes] = useState(false)
 
@@ -366,6 +369,31 @@ export default function HouseCard({
   const handleComeBackSubmit = async () => {
     setLoading(true)
     const followUpAt = comeBackDate ? new Date(comeBackDate + 'T10:00:00').toISOString() : undefined
+
+    // If name or phone captured, upsert a lead so the contact persists
+    const name = comeBackName.trim()
+    const phoneNum = comeBackPhone.trim()
+    const note = comeBackNote.trim()
+    if (name || phoneNum || note) {
+      if (openLead?.id) {
+        await supabase.from('leads').update({
+          full_name: name || openLead.full_name,
+          phone: phoneNum || openLead.phone,
+          notes: note ? (openLead.notes ? `${openLead.notes}\n\n${note}` : note) : openLead.notes,
+          next_touch_at: followUpAt ?? null,
+        }).eq('id', openLead.id)
+      } else {
+        await supabase.from('leads').insert({
+          house_id: house.id,
+          full_name: name || null,
+          phone: phoneNum || null,
+          notes: note || null,
+          state: 'nurture',
+          next_touch_at: followUpAt ?? null,
+        })
+      }
+    }
+
     await onKnock('come_back', followUpAt)
     setLoading(false)
   }
@@ -545,27 +573,89 @@ export default function HouseCard({
           </div>
         )}
 
-        {/* Come-back date picker */}
+        {/* Come-back form — capture name/phone/notes + follow-up date */}
         {showComeBackPicker && (
           <div className="px-5 pb-4">
-            <div className="bg-lime-50 border border-lime-200 rounded-2xl p-4">
-              <p className="text-sm font-semibold text-gray-800 mb-2">When should you come back?</p>
-              <input
-                type="date"
-                value={comeBackDate}
-                onChange={(e) => setComeBackDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base mb-3"
-                min={new Date().toISOString().split('T')[0]}
-              />
-              <div className="flex gap-2">
+            <div className="bg-gradient-to-br from-lime-50 to-green-50 border border-lime-200 rounded-2xl p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <span className="text-2xl">📅</span>
+                <div>
+                  <p className="text-base font-bold text-gray-900">Come Back</p>
+                  <p className="text-xs text-gray-500">Save what you need so you're ready next time</p>
+                </div>
+              </div>
+
+              {/* Address — read-only reminder */}
+              <div className="flex items-center gap-2 bg-white/70 border border-lime-200 rounded-lg px-3 py-2">
+                <span className="text-sm">📍</span>
+                <span className="text-xs font-semibold text-gray-700 flex-1 truncate">{house.fullAddress || 'No address'}</span>
+              </div>
+
+              {/* Name */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Name <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input
+                  type="text"
+                  value={comeBackName}
+                  onChange={(e) => setComeBackName(e.target.value)}
+                  placeholder="First Last"
+                  autoCapitalize="words"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:border-lime-500 outline-none bg-white"
+                />
+              </div>
+
+              {/* Phone */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Phone <span className="text-gray-400 font-normal">(optional)</span></label>
+                <input
+                  type="tel"
+                  value={comeBackPhone}
+                  onChange={(e) => setComeBackPhone(e.target.value)}
+                  placeholder="(949) 555-1234"
+                  inputMode="tel"
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base focus:border-lime-500 outline-none bg-white"
+                />
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
+                <textarea
+                  value={comeBackNote}
+                  onChange={(e) => setComeBackNote(e.target.value)}
+                  placeholder="Wife makes decisions, back Saturday after 2pm, dogs in yard..."
+                  rows={2}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:border-lime-500 outline-none bg-white resize-none"
+                />
+              </div>
+
+              {/* Date */}
+              <div>
+                <label className="block text-xs font-semibold text-gray-600 mb-1">Follow-up date</label>
+                <input
+                  type="date"
+                  value={comeBackDate}
+                  onChange={(e) => setComeBackDate(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-base bg-white"
+                  min={new Date().toISOString().split('T')[0]}
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
                 <button
                   onClick={handleComeBackSubmit}
                   disabled={loading}
-                  className="flex-1 bg-[#91CE16] text-white font-bold py-3 rounded-xl active:scale-95 disabled:opacity-50"
+                  className="flex-1 bg-gradient-to-r from-lime-500 to-green-600 text-white font-bold py-3 rounded-xl active:scale-95 disabled:opacity-50 shadow"
                 >
-                  {comeBackDate ? 'Set Follow-up' : 'No Date'}
+                  {loading ? 'Saving…' : comeBackDate ? 'Save Follow-up' : 'Save (no date)'}
                 </button>
-                <button onClick={() => setShowComeBackPicker(false)} className="px-4 py-3 text-gray-500 rounded-xl active:bg-gray-100">
+                <button
+                  onClick={() => {
+                    setShowComeBackPicker(false)
+                    setComeBackName(''); setComeBackPhone(''); setComeBackNote(''); setComeBackDate('')
+                  }}
+                  className="px-4 py-3 text-gray-500 rounded-xl active:bg-gray-100"
+                >
                   Cancel
                 </button>
               </div>
