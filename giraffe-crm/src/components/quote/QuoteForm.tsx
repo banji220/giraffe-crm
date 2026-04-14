@@ -16,6 +16,8 @@ interface QuoteFormProps {
 export interface QuoteData {
   fullName: string
   phone: string
+  email: string
+  notes: string
   windowCount: number
   serviceTypes: ServiceType[]
   basePrice: number
@@ -38,6 +40,8 @@ const SERVICE_OPTIONS: { type: ServiceType; label: string; shortLabel: string }[
 export default function QuoteForm({ outcome, address, onSubmit, onClose }: QuoteFormProps) {
   const [fullName, setFullName] = useState('')
   const [phone, setPhone] = useState('')
+  const [email, setEmail] = useState('')
+  const [notes, setNotes] = useState('')
   const [windowCount, setWindowCount] = useState(20)
   const [serviceTypes, setServiceTypes] = useState<ServiceType[]>(['exterior'])
   const [priceOverride, setPriceOverride] = useState<number | null>(null)
@@ -84,6 +88,8 @@ export default function QuoteForm({ outcome, address, onSubmit, onClose }: Quote
     await onSubmit({
       fullName: fullName.trim(),
       phone: phone.trim(),
+      email: email.trim(),
+      notes: notes.trim(),
       windowCount,
       serviceTypes,
       basePrice: pricing.basePrice,
@@ -153,6 +159,33 @@ export default function QuoteForm({ outcome, address, onSubmit, onClose }: Quote
               placeholder="(949) 555-1234"
               inputMode="tel"
               className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          {/* Email */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Email <span className="text-gray-400 font-normal">(optional)</span></label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="name@email.com"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none"
+            />
+          </div>
+
+          {/* Notes */}
+          <div>
+            <label className="block text-sm font-medium text-gray-600 mb-1">Notes <span className="text-gray-400 font-normal">(optional)</span></label>
+            <textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Dogs in yard, gate code 4321, needs ladder for back..."
+              rows={3}
+              className="w-full border border-gray-300 rounded-xl px-4 py-3 text-base focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none resize-none"
             />
           </div>
 

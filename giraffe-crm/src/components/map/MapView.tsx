@@ -574,6 +574,8 @@ export default function MapView() {
         .update({
           full_name: data.fullName || null,
           phone: data.phone || null,
+          email: data.email || null,
+          notes: data.notes || null,
           window_count: data.windowCount,
           service_types: data.serviceTypes,
           base_price: data.basePrice,

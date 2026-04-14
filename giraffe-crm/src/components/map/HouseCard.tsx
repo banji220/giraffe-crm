@@ -129,6 +129,8 @@ export default function HouseCard({
     state: LeadState
     full_name: string | null
     phone: string | null
+    email: string | null
+    notes: string | null
     final_price: number | null
     anchor_price: number | null
     window_count: number | null
@@ -154,7 +156,7 @@ export default function HouseCard({
     const hydrate = async () => {
       const [knocksRes, leadsRes, jobsRes, customersRes] = await Promise.all([
         supabase.from('knocks').select('id, outcome, note, follow_up_at, created_at').eq('house_id', house.id).order('created_at', { ascending: false }),
-        supabase.from('leads').select('id, state, full_name, phone, final_price, anchor_price, window_count, created_at, updated_at').eq('house_id', house.id).order('created_at', { ascending: false }),
+        supabase.from('leads').select('id, state, full_name, phone, email, notes, final_price, anchor_price, window_count, created_at, updated_at').eq('house_id', house.id).order('created_at', { ascending: false }),
         supabase.from('jobs').select('id, scheduled_at, completed_at, status, price, paid_amount, created_at').eq('house_id', house.id).order('scheduled_at', { ascending: false }),
         supabase.from('customers').select('id, full_name, phone, lifetime_value, total_jobs, last_job_at, created_at').eq('house_id', house.id).limit(1),
       ])
@@ -169,6 +171,8 @@ export default function HouseCard({
           state: activeLead.state as LeadState,
           full_name: activeLead.full_name,
           phone: activeLead.phone,
+          email: (activeLead as any).email ?? null,
+          notes: (activeLead as any).notes ?? null,
           final_price: activeLead.final_price,
           anchor_price: activeLead.anchor_price,
           window_count: activeLead.window_count,
@@ -214,7 +218,7 @@ export default function HouseCard({
             at: l.updated_at ?? l.created_at,
             dot: l.state === 'won' ? '#14B714' : l.state === 'lost' ? '#DD1111' : '#A12EDA',
             title: l.state === 'won' ? 'Won' : l.state === 'lost' ? 'Lost' : 'Quoted',
-            subtitle: [l.full_name, l.phone, l.window_count ? `${l.window_count} windows` : null].filter(Boolean).join(' · ') || undefined,
+            subtitle: [l.full_name, l.phone, (l as any).email, l.window_count ? `${l.window_count} windows` : null].filter(Boolean).join(' · ') || undefined,
             amount: l.final_price,
           })
         }
@@ -366,6 +370,17 @@ export default function HouseCard({
           </h2>
           {nameDisplay && (
             <p className="text-sm text-gray-500 mt-0.5">{nameDisplay}{phone ? ` · ${phone}` : ''}</p>
+          )}
+          {openLead?.email && (
+            <a href={`mailto:${openLead.email}`} className="text-sm text-blue-600 mt-0.5 block truncate active:text-blue-800">
+              {openLead.email}
+            </a>
+          )}
+          {openLead?.notes && (
+            <div className="mt-2 bg-amber-50 border-l-4 border-amber-300 rounded px-3 py-2">
+              <div className="text-[10px] uppercase tracking-widest text-amber-700 font-bold mb-0.5">Notes</div>
+              <p className="text-sm text-gray-800 whitespace-pre-wrap leading-snug">{openLead.notes}</p>
+            </div>
           )}
         </div>
 
