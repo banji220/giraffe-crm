@@ -3,7 +3,8 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { reverseGeocode } from '@/lib/geo'
-import KnockSheet, { type SheetHouse } from '@/components/map/KnockSheet'
+import HouseCard from '@/components/map/HouseCard'
+import { type SheetHouse } from '@/components/map/KnockSheet'
 import QuoteForm, { type QuoteData } from '@/components/quote/QuoteForm'
 import type { KnockOutcome, HouseState } from '@/types/database'
 
@@ -667,7 +668,7 @@ export default function MapView() {
 
       {/* Knock bottom sheet */}
       {selectedHouse && !quoteOutcome && (
-        <KnockSheet
+        <HouseCard
           house={selectedHouse}
           onClose={() => setSelectedHouse(null)}
           onKnock={handleKnock}
