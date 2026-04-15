@@ -3,22 +3,15 @@
 /**
  * /auth/callback — Google OAuth return destination.
  *
- * Supabase PKCE flow lands here with a `?code=...` query param. We exchange
- * it for a session, probe the allowlist, set the cross-subdomain beacon,
- * and either punt into /today or kick back to /login with a message.
- *
- * A module-level lock ensures the PKCE code is only exchanged once per
- * page load — React effect re-runs will short-circuit to waiting for the
- * in-flight exchange instead of triggering a duplicate failing call.
+ * Supabase PKCE flow lands here with a `?code=...` query param. The Supabase
+ * client auto-detects the URL and exchanges the code on init (detectSessionInUrl).
+ * We just wait for the session to show up, then check the allowlist and bounce.
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { setSessionBeacon, clearSessionBeacon } from '@/lib/sessionCookie'
-
-// Module-level exchange lock — survives React effect re-runs.
-let exchangePromise: Promise<{ ok: boolean }> | null = null
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -27,21 +20,6 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let cancelled = false
-
-    const runExchange = async (code: string) => {
-      if (exchangePromise) return exchangePromise
-      exchangePromise = (async () => {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
-        if (error) {
-          // Exchange failed — check whether a session nevertheless exists
-          // (possible if a parallel tab or prior run already consumed the code).
-          const { data } = await supabase.auth.getSession()
-          return { ok: !!data.session }
-        }
-        return { ok: true }
-      })()
-      return exchangePromise
-    }
 
     ;(async () => {
       const url = new URL(window.location.href)
@@ -56,27 +34,42 @@ export default function AuthCallbackPage() {
         return
       }
 
-      // If a session already exists, skip the exchange entirely.
-      const { data: existing } = await supabase.auth.getSession()
-      if (cancelled) return
+      // Try to get session. If missing, attempt the exchange.
+      // If that fails, wait a beat and check again — the Supabase client
+      // may have auto-exchanged the code in parallel.
+      let session = (await supabase.auth.getSession()).data.session
 
-      let sessionOk = !!existing.session
-
-      if (!sessionOk && code) {
-        const result = await runExchange(code)
+      if (!session && code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (cancelled) return
-        sessionOk = result.ok
+        if (error) {
+          // Give auto-exchange / parallel run a moment to settle.
+          await new Promise(r => setTimeout(r, 400))
+          if (cancelled) return
+          session = (await supabase.auth.getSession()).data.session
+        } else {
+          session = (await supabase.auth.getSession()).data.session
+        }
       }
 
-      if (!sessionOk) {
+      if (cancelled) return
+
+      if (!session) {
         setMsg('Sign-in failed. Sending you back…')
         setTimeout(() => router.replace('/login'), 1200)
         return
       }
 
       // Check allowlist
-      const { data: allowed } = await supabase.rpc('is_allowed')
+      const { data: allowed, error: rpcErr } = await supabase.rpc('is_allowed')
       if (cancelled) return
+
+      if (rpcErr) {
+        // Don't nuke the session on a transient RPC error — let AuthGate retry.
+        setSessionBeacon()
+        router.replace('/today')
+        return
+      }
 
       if (!allowed) {
         await supabase.auth.signOut()
