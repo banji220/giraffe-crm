@@ -4,8 +4,9 @@
  * <AuthGate> — wraps any page that requires auth.
  *
  * Checks Supabase session + allowlist (via is_allowed() RPC) client-side.
- * Shows the same System Boot sequence (counter → logo flash → curtain)
- * as the login page so the transition feels continuous.
+ * Once a session has been validated in this tab, subsequent mounts render
+ * children instantly — no animation, no flash — so navigating between
+ * protected routes (Today/Deals/Map/Clients/Me) is zero-friction.
  */
 
 import { useEffect, useState, useRef } from 'react'
@@ -13,17 +14,14 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { setSessionBeacon, clearSessionBeacon } from '@/lib/sessionCookie'
 
-type State = 'checking' | 'ok' | 'denied'
-
-const INK = '#0A0A0A'
-const PAPER = '#F5F5F2'
+// Tab-level memo: once we've validated a session, don't block the UI again
+// for subsequent route navigations. Background re-validates silently.
+let validatedOnce = false
 
 export default function AuthGate({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const supabase = useRef(createClient()).current
-  const [state, setState] = useState<State>('checking')
-  const [authDone, setAuthDone] = useState(false)
-  const [bootDone, setBootDone] = useState(false)
+  const [ok, setOk] = useState(validatedOnce)
 
   useEffect(() => {
     let cancelled = false
@@ -34,6 +32,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
       if (!session?.user?.phone && !session?.user?.email) {
         clearSessionBeacon()
+        validatedOnce = false
         router.replace('/login')
         return
       }
@@ -44,109 +43,55 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       if (error || !allowed) {
         await supabase.auth.signOut()
         clearSessionBeacon()
+        validatedOnce = false
         router.replace('/login')
         return
       }
 
       setSessionBeacon()
-      setState('ok')
-      setAuthDone(true)
+      validatedOnce = true
+      if (!cancelled) setOk(true)
     })()
 
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') { clearSessionBeacon(); router.replace('/login') }
+      if (event === 'SIGNED_OUT') {
+        validatedOnce = false
+        clearSessionBeacon()
+        router.replace('/login')
+      }
     })
 
     return () => { cancelled = true; sub.subscription.unsubscribe() }
   }, [router, supabase])
 
-  // Only reveal children once BOTH auth check and boot animation are done
-  if (state === 'checking' || !bootDone) {
-    return <BootPreloader authDone={authDone} onComplete={() => setBootDone(true)} />
-  }
+  // Already validated in this tab → render instantly, no loader.
+  if (ok) return <>{children}</>
 
-  return <>{children}</>
-}
-
-/* ─── Boot preloader — same style as login page ──────────────────────────── */
-const BOOT_STATUS = ['INIT…', 'AUTH…', 'READY.']
-
-function BootPreloader({ authDone, onComplete }: { authDone: boolean; onComplete: () => void }) {
-  const [counter, setCounter] = useState(0)
-  const [phase, setPhase] = useState<'count' | 'logo' | 'curtain'>('count')
-
-  // Counter 0 → 100, holds at 99 until auth finishes
-  useEffect(() => {
-    if (phase !== 'count') return
-    const id = setInterval(() => {
-      setCounter(prev => {
-        // Pause at 99 until auth resolves
-        if (prev >= 99 && !authDone) return 99
-        const jump = Math.floor(Math.random() * 4) + 1
-        const next = Math.min(prev + jump, 100)
-        if (next >= 100) {
-          clearInterval(id)
-          setTimeout(() => setPhase('logo'), 180)
-        }
-        return next
-      })
-    }, 32)
-    return () => clearInterval(id)
-  }, [phase, authDone])
-
-  useEffect(() => {
-    if (phase === 'logo') {
-      const t = setTimeout(() => setPhase('curtain'), 700)
-      return () => clearTimeout(t)
-    }
-    if (phase === 'curtain') {
-      const t = setTimeout(onComplete, 420)
-      return () => clearTimeout(t)
-    }
-  }, [phase, onComplete])
-
-  const statusIdx = counter < 40 ? 0 : counter < 85 ? 1 : 2
-
+  // First-time check: minimal static state, no animation.
   return (
-    <>
-      <style jsx global>{`
-        @keyframes gcrm-curtain {
-          from { transform: translateY(0); }
-          to   { transform: translateY(-100%); }
-        }
-        .gcrm-curtain-anim { animation: gcrm-curtain 360ms cubic-bezier(0.76, 0, 0.24, 1) forwards; }
-        @keyframes gcrm-logo-pop {
-          0%   { opacity: 0; transform: scale(0.6); }
-          60%  { opacity: 1; transform: scale(1.08); }
-          100% { opacity: 1; transform: scale(1); }
-        }
-        .gcrm-logo-pop-anim { animation: gcrm-logo-pop 360ms cubic-bezier(0.22, 1, 0.36, 1); }
-      `}</style>
-      <div
-        className={`fixed inset-0 z-50 flex items-center justify-center ${phase === 'curtain' ? 'gcrm-curtain-anim' : ''}`}
-        style={{ background: INK, color: PAPER }}
-      >
-        {phase === 'count' && (
-          <div className="flex flex-col items-center gap-4">
-            <div className="font-mono font-black tabular-nums tracking-tighter leading-none text-[clamp(72px,18vw,160px)]">
-              {String(counter).padStart(3, '0')}
-            </div>
-            <div className="font-mono text-[10px] tracking-[0.35em] uppercase opacity-70">
-              {BOOT_STATUS[statusIdx]}
-            </div>
-          </div>
-        )}
-
-        {phase !== 'count' && (
-          <img
-            src="/logo.png"
-            alt="Giraffe CRM"
-            draggable={false}
-            className="object-contain select-none pointer-events-none gcrm-logo-pop-anim"
-            style={{ width: 'clamp(96px, 22vw, 140px)', height: 'clamp(96px, 22vw, 140px)' }}
-          />
-        )}
-      </div>
-    </>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: '#0A0A0A',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <img
+        src="/logo.png"
+        alt=""
+        draggable={false}
+        style={{
+          width: 72,
+          height: 72,
+          objectFit: 'contain',
+          userSelect: 'none',
+          pointerEvents: 'none',
+          opacity: 0.9,
+        }}
+      />
+    </div>
   )
 }
