@@ -27,7 +27,39 @@
 import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { Zap, Flame, Users, User, Map as MapIcon } from 'lucide-react'
+
+/* Inline icon primitives — replaces lucide-react to avoid external dep */
+type IconProps = { className?: string; strokeWidth?: number }
+const Zap = ({ className, strokeWidth = 2 }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
+  </svg>
+)
+const Flame = ({ className, strokeWidth = 2 }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M8.5 14.5A2.5 2.5 0 0 0 11 17c2 0 3-2 3-4 0-1.5-.5-3-2-4 .5 1.5-1 3-2.5 3C8 12 7 11 7 9c0-1 .5-2 1-2.5C6 7 4.5 10 4.5 13c0 4 3 7 7 7 4.5 0 7.5-3.5 7.5-7 0-5-5-9-7.5-10 .5 2-2 3-3 4.5" />
+  </svg>
+)
+const Users = ({ className, strokeWidth = 2 }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+    <circle cx="9" cy="7" r="4" />
+    <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+  </svg>
+)
+const User = ({ className, strokeWidth = 2 }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+    <circle cx="12" cy="7" r="4" />
+  </svg>
+)
+const MapIcon = ({ className, strokeWidth = 2 }: IconProps) => (
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
+    <path d="M1 6v15l7-3 8 3 7-3V3l-7 3-8-3-7 3z" />
+    <path d="M8 3v15M16 6v15" />
+  </svg>
+)
 
 type TabId = 'today' | 'deals' | 'map' | 'clients' | 'me'
 
