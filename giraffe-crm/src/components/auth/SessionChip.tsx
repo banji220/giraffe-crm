@@ -101,14 +101,32 @@ export default function SessionChip() {
         <div className="fixed inset-0 z-[60] flex flex-col justify-end">
           <div className="absolute inset-0 bg-black/50" onClick={() => setOpen(false)} />
           <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[85vh] overflow-y-auto animate-slide-up">
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1">
+            {/* Handle — tap to close */}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="w-full flex justify-center pt-3 pb-1 active:opacity-60"
+            >
               <div className="w-10 h-1.5 rounded-full bg-gray-300" />
-            </div>
+            </button>
+
+            {/* Close X — always visible, top right */}
+            <button
+              type="button"
+              onClick={() => setOpen(false)}
+              aria-label="Close"
+              className="absolute top-3 right-3 w-9 h-9 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center active:bg-gray-200 active:scale-95 transition-transform z-10"
+            >
+              <svg viewBox="0 0 24 24" className="w-5 h-5" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
 
             {/* Header */}
             <div className="px-5 pt-2 pb-4">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-3 pr-12">
                 <div className="w-12 h-12 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-black flex items-center justify-center font-black shadow">
                   {last4(phone) || '··'}
                 </div>
