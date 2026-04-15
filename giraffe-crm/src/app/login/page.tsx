@@ -1,30 +1,26 @@
 'use client'
 
 /**
- * /login — Giraffe CRM "System Boot" login experience.
+ * /login — Giraffe CRM "System Boot" login experience. Google-only.
  *
- * Visual design ported from Loveable kinetic-typography mockup:
+ * Visual:
  *   1. System boot preloader: 0→100 counter with random speed, cycling status lines,
  *      curtain reveal on complete.
  *   2. Staggered letter-by-letter headline reveal ("Knock, knock." / "Who's there?" / "Giraffe!").
- *   3. Google OAuth + phone SMS OTP flow, styled as brutalist inputs.
+ *   3. Hero Google OAuth button — the only path in.
  *   4. Bottom marquee strip — "KNOCK. QUOTE. CLOSE."
  *
- * Auth logic preserved from prior version:
- *   - Supabase signInWithOtp / verifyOtp / signInWithOAuth
- *   - is_allowed() RPC for allowlist check
+ * Auth logic:
+ *   - Supabase signInWithOAuth (Google)
+ *   - is_allowed() RPC — invite allowlist check
  *   - Cross-subdomain session beacon on .holygiraffe.com
- *   - Invite link ?p=... prefill
  *   - ?auto=google → immediately fire Google OAuth (landing-page deep link)
  */
 
-import { useEffect, useRef, useState, Suspense, useCallback, type KeyboardEvent, type ChangeEvent } from 'react'
+import { useEffect, useRef, useState, Suspense, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { toE164, formatAsYouType, digitsOnly } from '@/lib/phone'
-import { setSessionBeacon, clearSessionBeacon } from '@/lib/sessionCookie'
-
-type Stage = 'phone' | 'code' | 'success' | 'not-allowed'
+import { setSessionBeacon } from '@/lib/sessionCookie'
 
 function haptic(pattern: number | number[] = 10) {
   try { (navigator as any).vibrate?.(pattern) } catch {}
@@ -43,16 +39,9 @@ function LoginInner() {
   const search = useSearchParams()
   const supabase = useRef(createClient()).current
 
-  // Preloader + stage state
   const [booted, setBooted] = useState(false)
-  const [stage, setStage] = useState<Stage>('phone')
-  const [phoneRaw, setPhoneRaw] = useState('')
-  const [phoneE164, setPhoneE164] = useState('')
-  const [code, setCode] = useState<string[]>(['', '', '', '', '', ''])
-  const [err, setErr] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const [googleBusy, setGoogleBusy] = useState(false)
-  const [cooldown, setCooldown] = useState(0)
+  const [err, setErr] = useState<string | null>(null)
 
   // If already signed in → skip everything
   useEffect(() => {
@@ -64,13 +53,8 @@ function LoginInner() {
     })
   }, [router, supabase])
 
-  // Prefill phone from ?p=...
-  useEffect(() => {
-    const prefill = search.get('p')
-    if (prefill) setPhoneRaw(formatAsYouType(prefill))
-  }, [search])
-
   const signInWithGoogle = useCallback(async () => {
+    haptic(12)
     setGoogleBusy(true)
     setErr(null)
     const redirectTo = `${window.location.origin}/auth/callback`
@@ -87,56 +71,6 @@ function LoginInner() {
     if (search.get('auto') === 'google') signInWithGoogle()
   }, [booted, search, signInWithGoogle])
 
-  // Cooldown tick
-  useEffect(() => {
-    if (cooldown <= 0) return
-    const t = setInterval(() => setCooldown(c => Math.max(0, c - 1)), 1000)
-    return () => clearInterval(t)
-  }, [cooldown])
-
-  const sendCode = async () => {
-    setErr(null)
-    const e164 = toE164(phoneRaw)
-    if (!e164) { setErr('That doesn\'t look like a US number.'); return }
-    haptic(10); setBusy(true)
-    const { error } = await supabase.auth.signInWithOtp({ phone: e164 })
-    setBusy(false)
-    if (error) {
-      if (/rate limit|too many/i.test(error.message)) { setErr('Slow down. Try again in a moment.'); setCooldown(60) }
-      else setErr(error.message)
-      return
-    }
-    setPhoneE164(e164)
-    setStage('code')
-  }
-
-  const verifyCode = async (fullCode: string) => {
-    setErr(null); haptic(8); setBusy(true)
-    const { error } = await supabase.auth.verifyOtp({ phone: phoneE164, token: fullCode, type: 'sms' })
-    setBusy(false)
-    if (error) {
-      haptic([30, 60, 30])
-      setErr('Wrong code. Try again.')
-      setCode(['', '', '', '', '', ''])
-      setTimeout(() => document.getElementById('otp-0')?.focus(), 50)
-      return
-    }
-    const { data: allowed } = await supabase.rpc('is_allowed')
-    if (!allowed) {
-      await supabase.auth.signOut(); clearSessionBeacon()
-      setStage('not-allowed'); return
-    }
-    setSessionBeacon(); haptic([20, 40, 20]); setStage('success')
-    setTimeout(() => router.replace('/today'), 500)
-  }
-
-  // Auto-verify when 6 digits entered
-  useEffect(() => {
-    if (stage !== 'code') return
-    const full = code.join('')
-    if (full.length === 6 && !busy) verifyCode(full)
-  }, [code, stage]) // eslint-disable-line react-hooks/exhaustive-deps
-
   // ───────────────────────────────────────────────────────────────────────────
   return (
     <div className="relative min-h-[100svh] flex flex-col overflow-x-hidden" style={{ background: 'oklch(0.07 0 0)', color: 'oklch(0.98 0 0)' }}>
@@ -148,53 +82,34 @@ function LoginInner() {
       {booted && (
         <div className="flex flex-1 flex-col items-center animate-gcrm-fade-in">
           {/* Hero zone */}
-          <div className="flex min-h-[38svh] flex-col items-center justify-end gap-4 px-6 pb-6 pt-12 sm:px-10">
-            <GiraffeLogo className="w-12 h-12 sm:w-14 sm:h-14 text-emerald-400" />
+          <div className="flex min-h-[42svh] flex-col items-center justify-end gap-4 px-6 pb-8 pt-12 sm:px-10">
+            <GiraffeLogo className="w-14 h-14 sm:w-16 sm:h-16" style={{ color: 'oklch(0.72 0.12 75)' }} />
             <HeroHeadline />
           </div>
 
           {/* Controls — thumb zone */}
           <div className="flex flex-1 flex-col items-center justify-start px-6 sm:px-10">
-            <div className="w-full max-w-sm flex flex-col gap-4 animate-gcrm-slide-up" style={{ animationDelay: '1.2s', animationFillMode: 'backwards' }}>
+            <div className="w-full max-w-sm flex flex-col gap-5 animate-gcrm-slide-up" style={{ animationDelay: '1.2s', animationFillMode: 'backwards' }}>
 
-              {stage === 'phone' && (
-                <PhoneFormBlock
-                  phoneRaw={phoneRaw}
-                  setPhoneRaw={setPhoneRaw}
-                  onSubmit={sendCode}
-                  onGoogle={signInWithGoogle}
-                  busy={busy}
-                  googleBusy={googleBusy}
-                  cooldown={cooldown}
-                  err={err}
-                />
+              <GoogleHeroButton onClick={signInWithGoogle} busy={googleBusy} />
+
+              {err && (
+                <p className="text-center font-mono text-xs tracking-wider text-rose-400 animate-gcrm-fade-in">
+                  {err}
+                </p>
               )}
 
-              {stage === 'code' && (
-                <CodeFormBlock
-                  phoneE164={phoneE164}
-                  code={code}
-                  setCode={setCode}
-                  busy={busy}
-                  err={err}
-                  onBack={() => { setStage('phone'); setCode(['', '', '', '', '', '']); setErr(null) }}
-                />
-              )}
+              <div className="flex items-center gap-3 pt-2">
+                <div className="h-px flex-1" style={{ background: 'oklch(0.25 0 0)' }} />
+                <span className="font-mono text-[10px] tracking-[0.3em]" style={{ color: 'oklch(0.55 0 0)' }}>
+                  INVITE ONLY
+                </span>
+                <div className="h-px flex-1" style={{ background: 'oklch(0.25 0 0)' }} />
+              </div>
 
-              {stage === 'success' && <SuccessBlock />}
-
-              {stage === 'not-allowed' && (
-                <NotAllowedBlock
-                  phoneE164={phoneE164}
-                  onBack={async () => {
-                    await supabase.auth.signOut(); clearSessionBeacon()
-                    setStage('phone'); setCode(['', '', '', '', '', '']); setErr(null)
-                  }}
-                />
-              )}
-
-              <p className="mt-2 text-center font-mono text-[10px] tracking-[0.15em]" style={{ color: 'oklch(0.55 0 0)' }}>
-                You must be invited. Messages from Giraffe CRM only.
+              <p className="text-center font-mono text-[10px] tracking-[0.15em] leading-relaxed" style={{ color: 'oklch(0.55 0 0)' }}>
+                Your Google account must be on the allowlist.<br />
+                Ask whoever sent you if you&apos;re not in yet.
               </p>
             </div>
           </div>
@@ -203,6 +118,50 @@ function LoginInner() {
         </div>
       )}
     </div>
+  )
+}
+
+/* ─── Google Hero Button — the main event ────────────────────────────────── */
+function GoogleHeroButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      className="group relative w-full overflow-hidden transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-wait"
+      style={{
+        background: 'oklch(0.98 0 0)',
+        color: 'oklch(0.07 0 0)',
+        boxShadow: '0 6px 0 0 oklch(0.72 0.12 75), 0 8px 32px -8px oklch(0.72 0.12 75 / 0.35)',
+      }}
+    >
+      {/* Animated shimmer sweep */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 animate-gcrm-shimmer"
+        style={{
+          background: 'linear-gradient(120deg, transparent 30%, oklch(0.95 0.02 75 / 0.7) 45%, oklch(0.95 0.02 75 / 0.7) 55%, transparent 70%)',
+          transform: 'translateX(-100%)',
+        }}
+      />
+
+      <div className="relative flex items-center justify-center gap-4 py-5 px-6">
+        <GoogleG />
+        <span className="font-black text-base uppercase tracking-[0.12em]">
+          {busy ? 'OPENING GOOGLE…' : 'Continue with Google'}
+        </span>
+        {!busy && (
+          <svg viewBox="0 0 24 24" className="w-5 h-5 transition-transform group-active:translate-x-1" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M5 12h14M13 5l7 7-7 7" />
+          </svg>
+        )}
+        {busy && (
+          <svg viewBox="0 0 24 24" className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+          </svg>
+        )}
+      </div>
+    </button>
   )
 }
 
@@ -276,7 +235,6 @@ function BootShell({ label }: { label: string }) {
 const HERO_LINES = ['Knock, knock.', "Who's there?", 'Giraffe!']
 
 function HeroHeadline() {
-  let globalIdx = 0
   return (
     <div className="flex flex-col items-center gap-1 text-center">
       {HERO_LINES.map((line, lineIdx) => (
@@ -286,7 +244,6 @@ function HeroHeadline() {
               const delay = 100 + lineIdx * 250 + charIdx * 25
               const stroked = lineIdx === 1
               const emerald = lineIdx === 2
-              globalIdx++
               return (
                 <span
                   key={`${lineIdx}-${charIdx}`}
@@ -309,172 +266,6 @@ function HeroHeadline() {
   )
 }
 
-/* ─── Phone form block ──────────────────────────────────────────────────── */
-function PhoneFormBlock({
-  phoneRaw, setPhoneRaw, onSubmit, onGoogle, busy, googleBusy, cooldown, err,
-}: {
-  phoneRaw: string
-  setPhoneRaw: (v: string) => void
-  onSubmit: () => void
-  onGoogle: () => void
-  busy: boolean
-  googleBusy: boolean
-  cooldown: number
-  err: string | null
-}) {
-  const complete = digitsOnly(phoneRaw).length === 10
-  const [focused, setFocused] = useState(false)
-
-  return (
-    <>
-      <button type="button" onClick={onGoogle} disabled={googleBusy}
-        className="flex items-center justify-center gap-3 w-full py-3.5 font-semibold text-sm transition-opacity disabled:opacity-50"
-        style={{ background: 'oklch(0.98 0 0)', color: 'oklch(0.1 0 0)' }}
-      >
-        <GoogleG />
-        <span>{googleBusy ? 'Opening Google…' : 'Continue with Google'}</span>
-      </button>
-
-      <div className="flex items-center gap-3">
-        <div className="h-px flex-1" style={{ background: 'oklch(0.25 0 0)' }} />
-        <span className="font-mono text-[10px] tracking-[0.3em]" style={{ color: 'oklch(0.55 0 0)' }}>OR</span>
-        <div className="h-px flex-1" style={{ background: 'oklch(0.25 0 0)' }} />
-      </div>
-
-      <div className="flex flex-col gap-3">
-        <div className="flex border transition-colors duration-150" style={{ borderColor: focused ? 'oklch(0.72 0.12 75)' : 'oklch(0.25 0 0)' }}>
-          <div className="flex items-center gap-1.5 px-3 font-mono text-sm" style={{ background: focused ? 'oklch(0.13 0.01 75)' : 'oklch(0.2 0 0)', color: focused ? 'oklch(0.98 0 0)' : 'oklch(0.55 0 0)' }}>
-            <span className="text-base">🇺🇸</span>
-            <span>+1</span>
-          </div>
-          <input
-            type="tel"
-            inputMode="tel"
-            autoComplete="tel"
-            value={phoneRaw}
-            onChange={(e) => setPhoneRaw(formatAsYouType(e.target.value))}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-            onKeyDown={(e) => { if (e.key === 'Enter' && complete) onSubmit() }}
-            placeholder="(555) 000-0000"
-            className="flex-1 px-4 py-3.5 outline-none font-mono text-lg tracking-wide bg-transparent"
-            style={{ color: 'oklch(0.98 0 0)', borderLeft: `1px solid ${focused ? 'oklch(0.72 0.12 75)' : 'oklch(0.25 0 0)'}`, background: focused ? 'oklch(0.13 0.01 75)' : 'oklch(0.2 0 0)' }}
-          />
-        </div>
-
-        {err && <p className="text-xs font-mono tracking-wider text-rose-400">{err}</p>}
-
-        <button type="button" onClick={onSubmit} disabled={!complete || busy || cooldown > 0}
-          className="w-full py-4 font-extrabold text-sm uppercase tracking-[0.15em] transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          style={{ background: 'oklch(0.72 0.12 75)', color: 'oklch(0.07 0 0)' }}
-        >
-          {busy ? 'Sending…' : cooldown > 0 ? `Wait ${cooldown}s` : 'Text me the code'}
-        </button>
-      </div>
-    </>
-  )
-}
-
-/* ─── Code form block ───────────────────────────────────────────────────── */
-function CodeFormBlock({
-  phoneE164, code, setCode, busy, err, onBack,
-}: {
-  phoneE164: string
-  code: string[]
-  setCode: (c: string[]) => void
-  busy: boolean
-  err: string | null
-  onBack: () => void
-}) {
-  const refs = useRef<(HTMLInputElement | null)[]>([])
-
-  const handleChange = (i: number, v: string) => {
-    if (!/^\d?$/.test(v)) return
-    const next = [...code]; next[i] = v; setCode(next)
-    if (v && i < 5) refs.current[i + 1]?.focus()
-  }
-  const handleKey = (i: number, e: KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !code[i] && i > 0) refs.current[i - 1]?.focus()
-  }
-  const handlePaste = (e: React.ClipboardEvent) => {
-    const pasted = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6)
-    if (pasted.length > 0) {
-      e.preventDefault()
-      const next = ['', '', '', '', '', '']
-      pasted.split('').forEach((d, i) => next[i] = d)
-      setCode(next)
-      refs.current[Math.min(pasted.length, 5)]?.focus()
-    }
-  }
-
-  return (
-    <div className="flex flex-col items-center gap-4">
-      <p className="font-mono text-xs tracking-[0.2em]" style={{ color: 'oklch(0.55 0 0)' }}>
-        ENTER 6-DIGIT CODE
-      </p>
-      <p className="font-mono text-[10px] tracking-[0.2em]" style={{ color: 'oklch(0.55 0 0)' }}>
-        Sent to {phoneE164.replace('+1', '+1 ')}
-      </p>
-
-      <div className="flex gap-2" onPaste={handlePaste}>
-        {code.map((digit, i) => (
-          <input
-            key={i}
-            id={`otp-${i}`}
-            ref={(el) => { refs.current[i] = el }}
-            type="text"
-            inputMode="numeric"
-            maxLength={1}
-            autoComplete="one-time-code"
-            value={digit}
-            onChange={(e: ChangeEvent<HTMLInputElement>) => handleChange(i, e.target.value)}
-            onKeyDown={(e) => handleKey(i, e)}
-            autoFocus={i === 0}
-            disabled={busy}
-            className="w-12 h-14 text-center font-mono text-2xl font-bold outline-none border transition-colors"
-            style={{ background: 'oklch(0.2 0 0)', color: 'oklch(0.98 0 0)', borderColor: digit ? 'oklch(0.72 0.12 75)' : 'oklch(0.25 0 0)' }}
-          />
-        ))}
-      </div>
-
-      {err && <p className="text-xs font-mono tracking-wider text-rose-400">{err}</p>}
-      {busy && <p className="text-xs font-mono tracking-wider" style={{ color: 'oklch(0.72 0.12 75)' }}>VERIFYING…</p>}
-
-      <button type="button" onClick={onBack}
-        className="font-mono text-[10px] tracking-[0.2em] underline underline-offset-4"
-        style={{ color: 'oklch(0.55 0 0)' }}
-      >
-        ← BACK
-      </button>
-    </div>
-  )
-}
-
-/* ─── Success & Not-allowed blocks ──────────────────────────────────────── */
-function SuccessBlock() {
-  return (
-    <div className="flex flex-col items-center gap-3 py-4">
-      <div className="font-mono text-xs tracking-[0.3em]" style={{ color: 'oklch(0.72 0.12 75)' }}>UNLOCKED.</div>
-      <div className="font-mono text-[10px] tracking-[0.2em]" style={{ color: 'oklch(0.55 0 0)' }}>Routing you to HQ…</div>
-    </div>
-  )
-}
-
-function NotAllowedBlock({ phoneE164, onBack }: { phoneE164: string; onBack: () => void }) {
-  return (
-    <div className="flex flex-col items-center gap-3 py-4 text-center">
-      <div className="font-mono text-xs tracking-[0.3em] text-rose-400">NOT ON THE LIST.</div>
-      <p className="text-sm" style={{ color: 'oklch(0.55 0 0)' }}>
-        <span className="font-mono">{phoneE164}</span> isn&apos;t invited yet.
-        Ask whoever sent you to add your number.
-      </p>
-      <button onClick={onBack} className="font-mono text-[10px] tracking-[0.2em] underline underline-offset-4" style={{ color: 'oklch(0.55 0 0)' }}>
-        ← TRY A DIFFERENT NUMBER
-      </button>
-    </div>
-  )
-}
-
 /* ─── Marquee strip ─────────────────────────────────────────────────────── */
 function MarqueeStrip() {
   const TEXT = 'KNOCK. QUOTE. CLOSE. — '
@@ -490,7 +281,7 @@ function MarqueeStrip() {
 /* ─── Icons ─────────────────────────────────────────────────────────────── */
 function GoogleG() {
   return (
-    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
+    <svg viewBox="0 0 24 24" className="w-6 h-6" aria-hidden>
       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -499,9 +290,9 @@ function GoogleG() {
   )
 }
 
-function GiraffeLogo({ className }: { className?: string }) {
+function GiraffeLogo({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
-    <svg viewBox="0 0 64 64" className={className} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+    <svg viewBox="0 0 64 64" className={className} style={style} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
       <path
         d="M38 8c-1.5 0-2.5 1-3 2l-1 3-3 1c-2 .5-3.5 2.5-3.5 4.5v6L22 28c-4 2-6 6-6 10v15c0 2 1.5 3.5 3.5 3.5S23 55 23 53v-12l3-2v12c0 2 1.5 3.5 3.5 3.5S33 53 33 51V30l2-1v4c0 1.5 1 2.5 2.5 2.5S40 34.5 40 33V18c0-1 .5-2 1.5-2.5l1.5-.5v-2c0-1-.5-2-1.5-2.5l-1-.5.5-2c0-.5-.5-1-1-1zM39 11v2M42 11v2"
         stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
@@ -557,6 +348,13 @@ function StyleInjector() {
         to   { transform: translateX(-50%); }
       }
       .animate-gcrm-marquee { animation: gcrm-marquee 30s linear infinite; }
+
+      @keyframes gcrm-shimmer {
+        0%   { transform: translateX(-100%); }
+        60%  { transform: translateX(100%); }
+        100% { transform: translateX(100%); }
+      }
+      .animate-gcrm-shimmer { animation: gcrm-shimmer 2.8s ease-in-out infinite; animation-delay: 1.6s; }
     `}</style>
   )
 }
