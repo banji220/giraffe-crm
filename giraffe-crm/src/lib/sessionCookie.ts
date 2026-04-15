@@ -39,6 +39,11 @@ export function setSessionBeacon() {
   document.cookie = parts.join('; ')
 }
 
+export function hasSessionBeacon(): boolean {
+  if (typeof document === 'undefined') return false
+  return document.cookie.split('; ').some(c => c.startsWith(`${COOKIE_NAME}=1`))
+}
+
 export function clearSessionBeacon() {
   if (typeof document === 'undefined') return
   const domain = parentDomain()
