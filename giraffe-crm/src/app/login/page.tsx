@@ -63,27 +63,22 @@ function LoginInner() {
   }, [booted, search, signInWithGoogle])
 
   return (
-    <div className="relative min-h-[100dvh] flex flex-col overflow-x-hidden" style={{ background: BG, color: PAPER }}>
+    <div className="fixed inset-0 flex flex-col overflow-hidden" style={{ background: BG, color: PAPER }}>
       <StyleInjector />
 
       {!booted && <SystemBootPreloader onComplete={() => setBooted(true)} />}
 
       {booted && (
-        <div className="flex flex-1 flex-col items-center animate-gcrm-fade-in pt-10 pb-0">
+        <div className="flex flex-1 flex-col items-center justify-between animate-gcrm-fade-in min-h-0 w-full">
           {/* Hero logo + headline */}
-          <div className="flex flex-col items-center gap-6 px-6 sm:px-10 pt-6">
-            <img
-              src="/logo.png"
-              alt="Giraffe CRM"
-              className="w-40 h-40 sm:w-48 sm:h-48 object-contain select-none pointer-events-none animate-gcrm-logo-in"
-              draggable={false}
-            />
+          <div className="flex flex-col items-center gap-4 px-6 pt-6 shrink-0">
+            <GiraffeMark />
             <HeroHeadline />
           </div>
 
           {/* Thumb zone */}
-          <div className="flex flex-1 flex-col items-center justify-end px-6 sm:px-10 pt-10 pb-10 w-full">
-            <div className="w-full max-w-sm flex flex-col gap-6 animate-gcrm-slide-up" style={{ animationDelay: '1.1s', animationFillMode: 'backwards' }}>
+          <div className="flex flex-col items-center justify-end px-6 w-full shrink-0">
+            <div className="w-full max-w-sm flex flex-col gap-4 animate-gcrm-slide-up" style={{ animationDelay: '1.1s', animationFillMode: 'backwards' }}>
 
               <GoogleHeroButton onClick={signInWithGoogle} busy={googleBusy} />
 
@@ -93,16 +88,8 @@ function LoginInner() {
                 </p>
               )}
 
-              <div className="flex items-center gap-3">
-                <div className="h-px flex-1" style={{ background: 'rgba(245,245,242,0.2)' }} />
-                <span className="font-mono text-[10px] tracking-[0.35em]" style={{ color: 'rgba(245,245,242,0.5)' }}>
-                  INVITE ONLY
-                </span>
-                <div className="h-px flex-1" style={{ background: 'rgba(245,245,242,0.2)' }} />
-              </div>
-
-              <p className="text-center font-mono text-[10px] tracking-[0.2em] leading-loose uppercase" style={{ color: 'rgba(245,245,242,0.5)' }}>
-                Your Google account must be<br />on the allowlist.
+              <p className="text-center font-mono text-[10px] tracking-[0.25em] uppercase" style={{ color: 'rgba(245,245,242,0.5)' }}>
+                Invite only · Allowlist required
               </p>
             </div>
           </div>
@@ -118,7 +105,7 @@ function LoginInner() {
 function GoogleHeroButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
   return (
     <div className="relative pb-[8px] pr-[8px]">
-      {/* Hard black shadow block */}
+      {/* Hard white shadow block */}
       <div
         aria-hidden
         className="absolute inset-0 translate-x-[8px] translate-y-[8px] rounded-2xl"
@@ -132,20 +119,20 @@ function GoogleHeroButton({ onClick, busy }: { onClick: () => void; busy: boolea
         aria-label="Sign in with Google"
         className="relative w-full rounded-2xl border-[3px] transition-transform duration-100 ease-out active:translate-x-[8px] active:translate-y-[8px] disabled:opacity-85 disabled:cursor-wait overflow-hidden"
         style={{
-          background: PAPER,
+          background: INK,
           borderColor: PAPER,
-          color: INK,
+          color: PAPER,
         }}
       >
         {/* Hatch stripe along the top */}
         <span
           aria-hidden
           className="pointer-events-none absolute top-0 left-0 right-0 h-[10px]"
-          style={{ background: `repeating-linear-gradient(90deg, ${INK} 0 10px, transparent 10px 20px)` }}
+          style={{ background: `repeating-linear-gradient(90deg, ${PAPER} 0 10px, transparent 10px 20px)` }}
         />
 
-        <div className="relative flex items-center justify-center gap-3 py-6 pt-8 px-6">
-          <div className="flex items-center justify-center w-10 h-10 rounded-xl border-[2.5px] shrink-0" style={{ background: PAPER, borderColor: INK }}>
+        <div className="relative flex items-center justify-center gap-3 py-5 pt-7 px-6">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl border-[2.5px] shrink-0" style={{ background: PAPER, borderColor: PAPER }}>
             <GoogleG />
           </div>
 
@@ -167,9 +154,9 @@ function GoogleHeroButton({ onClick, busy }: { onClick: () => void; busy: boolea
         {/* Bottom caption bar */}
         <div
           className="relative flex items-center justify-center gap-2 py-2 border-t-[2px]"
-          style={{ borderColor: 'rgba(10,10,10,0.18)', background: 'rgba(10,10,10,0.06)' }}
+          style={{ borderColor: 'rgba(245,245,242,0.25)', background: 'rgba(245,245,242,0.06)' }}
         >
-          <span className="font-mono text-[9px] tracking-[0.35em]" style={{ color: 'rgba(10,10,10,0.7)' }}>
+          <span className="font-mono text-[9px] tracking-[0.35em]" style={{ color: 'rgba(245,245,242,0.7)' }}>
             VIA GOOGLE · SECURE · ONE TAP
           </span>
         </div>
@@ -226,8 +213,8 @@ function SystemBootPreloader({ onComplete }: { onComplete: () => void }) {
           {STATUS_LINES[lineIndex]}
         </p>
       </div>
-      <div className="absolute bottom-8 left-8 flex items-center gap-2">
-        <img src="/logo.png" alt="" className="w-5 h-5 opacity-70 object-contain" />
+      <div className="absolute bottom-8 left-8 flex items-center gap-2 opacity-70">
+        <GiraffeMark size={20} />
         <span className="font-mono text-[10px] tracking-[0.2em]" style={{ color: 'rgba(245,245,242,0.5)' }}>
           GIRAFFE CRM v1.0
         </span>
@@ -287,28 +274,53 @@ function MarqueeStrip() {
       {Array.from({ length: 8 }).map((_, i) => (
         <span key={i} className="flex items-center gap-6 pr-6 pl-6">
           <span>{TEXT}</span>
-          <span className="inline-block w-2 h-2 rounded-full" style={{ background: INK }} />
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: PAPER }} />
         </span>
       ))}
     </div>
   )
 
   return (
-    <>
+    <div
+      className="w-full overflow-hidden py-3 border-y-[3px] shrink-0"
+      style={{ background: INK, color: PAPER, borderColor: PAPER }}
+    >
       <div
-        className="w-full overflow-hidden py-4 border-y-[3px]"
-        style={{ background: PAPER, color: INK, borderColor: INK }}
+        className="flex whitespace-nowrap font-black text-base tracking-[0.12em] uppercase will-change-transform"
+        style={{ animation: 'gcrm-marquee-x 22s linear infinite' }}
       >
-        <div
-          className="flex whitespace-nowrap font-black text-base tracking-[0.12em] uppercase will-change-transform"
-          style={{ animation: 'gcrm-marquee-x 22s linear infinite' }}
-        >
-          {renderTrack()}
-          {renderTrack(true)}
-        </div>
+        {renderTrack()}
+        {renderTrack(true)}
       </div>
-      <div aria-hidden className="w-full h-[20vh]" style={{ background: BG }} />
-    </>
+    </div>
+  )
+}
+
+/* ─── Giraffe mark — inline SVG, no external asset required ──────────────── */
+function GiraffeMark({ size = 128 }: { size?: number }) {
+  return (
+    <svg
+      viewBox="0 0 120 120"
+      width={size}
+      height={size}
+      className="animate-gcrm-logo-in select-none"
+      aria-label="Giraffe CRM"
+      role="img"
+    >
+      <rect x="4" y="4" width="112" height="112" rx="24" fill={GIRAFFE_GOLD} />
+      <rect x="4" y="4" width="112" height="112" rx="24" fill="none" stroke={INK} strokeWidth="4" />
+      <text
+        x="60"
+        y="82"
+        textAnchor="middle"
+        fontFamily="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+        fontWeight="900"
+        fontSize="78"
+        fill={INK}
+      >
+        G
+      </text>
+    </svg>
   )
 }
 
