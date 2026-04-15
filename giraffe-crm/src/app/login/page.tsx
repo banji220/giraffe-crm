@@ -210,22 +210,22 @@ function BootPreloader({ onComplete }: { onComplete: () => void }) {
     if (phase !== 'count') return
     const id = setInterval(() => {
       setCounter(prev => {
-        const jump = Math.floor(Math.random() * 5) + 2
+        const jump = Math.floor(Math.random() * 4) + 1
         const next = Math.min(prev + jump, 100)
         if (next >= 100) {
           clearInterval(id)
-          setTimeout(() => setPhase('logo'), 120)
+          setTimeout(() => setPhase('logo'), 180)
         }
         return next
       })
-    }, 24)
+    }, 32)
     return () => clearInterval(id)
   }, [phase])
 
   // Logo flash (~500ms) → curtain up → unmount
   useEffect(() => {
     if (phase === 'logo') {
-      const t = setTimeout(() => setPhase('curtain'), 520)
+      const t = setTimeout(() => setPhase('curtain'), 700)
       return () => clearTimeout(t)
     }
     if (phase === 'curtain') {
