@@ -26,24 +26,37 @@ export default function AuthCallbackPage() {
       const errParam = url.searchParams.get('error_description') || url.searchParams.get('error')
 
       if (errParam) {
-        setMsg('Sign-in failed. Sending you back…')
-        setTimeout(() => router.replace('/login'), 1200)
+        if (!cancelled) {
+          setMsg('Sign-in failed. Sending you back…')
+          setTimeout(() => router.replace('/login'), 1200)
+        }
         return
       }
 
-      if (code) {
+      // If a session already exists (code was exchanged on a prior effect run),
+      // skip the exchange — PKCE codes are single-use and a re-attempt will error.
+      const { data: existing } = await supabase.auth.getSession()
+      if (cancelled) return
+
+      if (!existing.session && code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (cancelled) return
         if (error) {
-          setMsg('Sign-in failed. Sending you back…')
-          setTimeout(() => router.replace('/login'), 1200)
-          return
+          // Check once more — another effect run may have succeeded in parallel.
+          const { data: retry } = await supabase.auth.getSession()
+          if (cancelled) return
+          if (!retry.session) {
+            setMsg('Sign-in failed. Sending you back…')
+            setTimeout(() => router.replace('/login'), 1200)
+            return
+          }
         }
       }
 
-      if (cancelled) return
-
       // Check allowlist
       const { data: allowed } = await supabase.rpc('is_allowed')
+      if (cancelled) return
+
       if (!allowed) {
         await supabase.auth.signOut()
         clearSessionBeacon()
