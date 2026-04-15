@@ -134,7 +134,7 @@ function SignInButton({ onClick, busy }: { onClick: () => void; busy: boolean })
     >
       <GoogleG />
       <span className="font-black text-[15px] uppercase tracking-[0.08em]">
-        {busy ? 'Opening…' : 'Sign in with Google'}
+        {busy ? 'Opening…' : 'Sign in'}
       </span>
       {busy && (
         <svg viewBox="0 0 24 24" className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
