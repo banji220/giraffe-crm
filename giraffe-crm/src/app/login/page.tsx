@@ -205,31 +205,31 @@ function BootPreloader({ onComplete }: { onComplete: () => void }) {
   const [counter, setCounter] = useState(0)
   const [phase, setPhase] = useState<'count' | 'logo' | 'curtain'>('count')
 
-  // Fast counter: 0 → 100 in ~700ms with hacking jumps
+  // Counter 0 → 100, visible but quick (~900ms) with hacking jumps
   useEffect(() => {
     if (phase !== 'count') return
     const id = setInterval(() => {
       setCounter(prev => {
-        const jump = Math.floor(Math.random() * 14) + 6
+        const jump = Math.floor(Math.random() * 5) + 2
         const next = Math.min(prev + jump, 100)
         if (next >= 100) {
           clearInterval(id)
-          setTimeout(() => setPhase('logo'), 60)
+          setTimeout(() => setPhase('logo'), 120)
         }
         return next
       })
-    }, 28)
+    }, 24)
     return () => clearInterval(id)
   }, [phase])
 
-  // Logo flash (~220ms) → curtain up → unmount
+  // Logo flash (~500ms) → curtain up → unmount
   useEffect(() => {
     if (phase === 'logo') {
-      const t = setTimeout(() => setPhase('curtain'), 260)
+      const t = setTimeout(() => setPhase('curtain'), 520)
       return () => clearTimeout(t)
     }
     if (phase === 'curtain') {
-      const t = setTimeout(onComplete, 380)
+      const t = setTimeout(onComplete, 420)
       return () => clearTimeout(t)
     }
   }, [phase, onComplete])
@@ -301,7 +301,7 @@ function Styles() {
         60%  { opacity: 1; transform: scale(1.08); }
         100% { opacity: 1; transform: scale(1); }
       }
-      .animate-gcrm-logo-pop { animation: gcrm-logo-pop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
+      .animate-gcrm-logo-pop { animation: gcrm-logo-pop 360ms cubic-bezier(0.22, 1, 0.36, 1); }
     `}</style>
   )
 }
