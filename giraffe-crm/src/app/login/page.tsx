@@ -121,47 +121,56 @@ function LoginInner() {
   )
 }
 
-/* ─── Google Hero Button — the main event ────────────────────────────────── */
+/* ─── Google Hero Button — Soft Pop Neo-Brutalism ────────────────────────── */
 function GoogleHeroButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={busy}
-      className="group relative w-full overflow-hidden transition-all active:scale-[0.98] disabled:opacity-70 disabled:cursor-wait"
-      style={{
-        background: 'oklch(0.98 0 0)',
-        color: 'oklch(0.07 0 0)',
-        boxShadow: '0 6px 0 0 oklch(0.72 0.12 75), 0 8px 32px -8px oklch(0.72 0.12 75 / 0.35)',
-      }}
-    >
-      {/* Animated shimmer sweep */}
-      <span
+    <div className="relative pb-2 pr-2">
+      {/* Shadow block — sits behind button, gets "absorbed" on press */}
+      <div
         aria-hidden
-        className="pointer-events-none absolute inset-0 animate-gcrm-shimmer"
-        style={{
-          background: 'linear-gradient(120deg, transparent 30%, oklch(0.95 0.02 75 / 0.7) 45%, oklch(0.95 0.02 75 / 0.7) 55%, transparent 70%)',
-          transform: 'translateX(-100%)',
-        }}
+        className="absolute inset-0 translate-x-[6px] translate-y-[6px] rounded-2xl"
+        style={{ background: '#0F0F0F' }}
       />
 
-      <div className="relative flex items-center justify-center gap-4 py-5 px-6">
-        <GoogleG />
-        <span className="font-black text-base uppercase tracking-[0.12em]">
-          {busy ? 'OPENING GOOGLE…' : 'Continue with Google'}
-        </span>
-        {!busy && (
-          <svg viewBox="0 0 24 24" className="w-5 h-5 transition-transform group-active:translate-x-1" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M5 12h14M13 5l7 7-7 7" />
-          </svg>
-        )}
-        {busy && (
-          <svg viewBox="0 0 24 24" className="w-5 h-5 animate-spin" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-          </svg>
-        )}
-      </div>
-    </button>
+      <button
+        type="button"
+        onClick={onClick}
+        disabled={busy}
+        className="gcrm-pop-btn relative w-full rounded-2xl border-[3px] border-black transition-transform duration-100 ease-out active:translate-x-[6px] active:translate-y-[6px] disabled:opacity-80 disabled:cursor-wait overflow-hidden"
+        style={{
+          background: '#FFE85C', // pastel yellow
+          color: '#0F0F0F',
+        }}
+      >
+        {/* Inner stripe accent */}
+        <span
+          aria-hidden
+          className="pointer-events-none absolute top-0 left-0 right-0 h-2"
+          style={{ background: 'repeating-linear-gradient(90deg, #0F0F0F 0 12px, transparent 12px 24px)' }}
+        />
+
+        <div className="relative flex items-center justify-center gap-3 py-6 px-6 pt-7">
+          <div className="flex items-center justify-center w-11 h-11 rounded-xl border-[2.5px] border-black bg-white">
+            <GoogleG />
+          </div>
+          <div className="flex flex-col items-start leading-tight">
+            <span className="font-mono text-[10px] tracking-[0.25em] opacity-70">TAP TO</span>
+            <span className="font-black text-xl uppercase tracking-tight">
+              {busy ? 'Opening…' : 'Sign in'}
+            </span>
+          </div>
+          {!busy ? (
+            <svg viewBox="0 0 24 24" className="ml-auto w-7 h-7 transition-transform group-active:translate-x-1" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="ml-auto w-7 h-7 animate-spin" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+              <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+            </svg>
+          )}
+        </div>
+      </button>
+    </div>
   )
 }
 
@@ -266,13 +275,24 @@ function HeroHeadline() {
   )
 }
 
-/* ─── Marquee strip ─────────────────────────────────────────────────────── */
+/* ─── Marquee strip — two-track seamless scroll ─────────────────────────── */
 function MarqueeStrip() {
-  const TEXT = 'KNOCK. QUOTE. CLOSE. — '
+  const TEXT = 'KNOCK. QUOTE. CLOSE. '
+  const track = Array.from({ length: 8 }).map((_, i) => (
+    <span key={i} className="mx-6 inline-flex items-center gap-6">
+      {TEXT}
+      <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#0F0F0F' }} />
+    </span>
+  ))
+
   return (
-    <div className="w-full overflow-hidden whitespace-nowrap py-3" style={{ background: 'oklch(0.72 0.12 75)', color: 'oklch(0.07 0 0)' }}>
-      <div className="inline-block animate-gcrm-marquee font-black text-base tracking-[0.2em] uppercase">
-        {Array.from({ length: 12 }).map((_, i) => <span key={i} className="mr-4">{TEXT}</span>)}
+    <div
+      className="w-full overflow-hidden py-4 border-y-[3px] border-black"
+      style={{ background: '#FFE85C', color: '#0F0F0F' }}
+    >
+      <div className="flex whitespace-nowrap animate-gcrm-marquee font-black text-base tracking-[0.15em] uppercase will-change-transform">
+        <div className="flex shrink-0">{track}</div>
+        <div className="flex shrink-0" aria-hidden>{track}</div>
       </div>
     </div>
   )
@@ -344,10 +364,10 @@ function StyleInjector() {
       .animate-gcrm-line { animation: gcrm-line 180ms ease-out; }
 
       @keyframes gcrm-marquee {
-        from { transform: translateX(0); }
-        to   { transform: translateX(-50%); }
+        0%   { transform: translate3d(0, 0, 0); }
+        100% { transform: translate3d(-50%, 0, 0); }
       }
-      .animate-gcrm-marquee { animation: gcrm-marquee 30s linear infinite; }
+      .animate-gcrm-marquee { animation: gcrm-marquee 22s linear infinite; }
 
       @keyframes gcrm-shimmer {
         0%   { transform: translateX(-100%); }
