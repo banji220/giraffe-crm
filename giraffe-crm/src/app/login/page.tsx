@@ -32,6 +32,7 @@ function LoginInner() {
   const search = useSearchParams()
   const supabase = useRef(createClient()).current
 
+  const [booted, setBooted] = useState(false)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
@@ -66,6 +67,8 @@ function LoginInner() {
       style={{ background: INK, color: PAPER }}
     >
       <Styles />
+
+      {!booted && <BootPreloader onComplete={() => setBooted(true)} />}
 
       {/* Hero — fills remaining space, centered */}
       <main className="flex flex-1 flex-col items-center justify-center gap-8 px-6 min-h-0">
@@ -195,6 +198,73 @@ function Marquee() {
   )
 }
 
+/* ─── Boot preloader — fast system-boot sequence, ends with logo flash ───── */
+const BOOT_STATUS = ['INIT…', 'AUTH…', 'READY.']
+
+function BootPreloader({ onComplete }: { onComplete: () => void }) {
+  const [counter, setCounter] = useState(0)
+  const [phase, setPhase] = useState<'count' | 'logo' | 'curtain'>('count')
+
+  // Fast counter: 0 → 100 in ~700ms with hacking jumps
+  useEffect(() => {
+    if (phase !== 'count') return
+    const id = setInterval(() => {
+      setCounter(prev => {
+        const jump = Math.floor(Math.random() * 14) + 6
+        const next = Math.min(prev + jump, 100)
+        if (next >= 100) {
+          clearInterval(id)
+          setTimeout(() => setPhase('logo'), 60)
+        }
+        return next
+      })
+    }, 28)
+    return () => clearInterval(id)
+  }, [phase])
+
+  // Logo flash (~220ms) → curtain up → unmount
+  useEffect(() => {
+    if (phase === 'logo') {
+      const t = setTimeout(() => setPhase('curtain'), 260)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'curtain') {
+      const t = setTimeout(onComplete, 380)
+      return () => clearTimeout(t)
+    }
+  }, [phase, onComplete])
+
+  const statusIdx = counter < 40 ? 0 : counter < 85 ? 1 : 2
+
+  return (
+    <div
+      className={`fixed inset-0 z-50 flex items-center justify-center ${phase === 'curtain' ? 'animate-gcrm-curtain' : ''}`}
+      style={{ background: INK, color: PAPER }}
+    >
+      {phase === 'count' && (
+        <div className="flex flex-col items-center gap-4">
+          <div className="font-mono font-black tabular-nums tracking-tighter leading-none text-[clamp(72px,18vw,160px)]">
+            {String(counter).padStart(3, '0')}
+          </div>
+          <div className="font-mono text-[10px] tracking-[0.35em] uppercase opacity-70">
+            {BOOT_STATUS[statusIdx]}
+          </div>
+        </div>
+      )}
+
+      {phase !== 'count' && (
+        <img
+          src="/logo.png"
+          alt="Giraffe CRM"
+          draggable={false}
+          className="object-contain select-none pointer-events-none animate-gcrm-logo-pop"
+          style={{ width: 'clamp(96px, 22vw, 140px)', height: 'clamp(96px, 22vw, 140px)' }}
+        />
+      )}
+    </div>
+  )
+}
+
 /* ─── Loading shell ──────────────────────────────────────────────────────── */
 function Shell() {
   return (
@@ -221,6 +291,17 @@ function Styles() {
         0%, 100% { opacity: 1; }
         50%      { opacity: 0.2; }
       }
+      @keyframes gcrm-curtain {
+        from { transform: translateY(0); }
+        to   { transform: translateY(-100%); }
+      }
+      .animate-gcrm-curtain { animation: gcrm-curtain 360ms cubic-bezier(0.76, 0, 0.24, 1) forwards; }
+      @keyframes gcrm-logo-pop {
+        0%   { opacity: 0; transform: scale(0.6); }
+        60%  { opacity: 1; transform: scale(1.08); }
+        100% { opacity: 1; transform: scale(1); }
+      }
+      .animate-gcrm-logo-pop { animation: gcrm-logo-pop 220ms cubic-bezier(0.22, 1, 0.36, 1); }
     `}</style>
   )
 }
