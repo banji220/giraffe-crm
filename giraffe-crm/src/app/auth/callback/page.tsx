@@ -3,9 +3,9 @@
 /**
  * /auth/callback — Google OAuth return destination.
  *
- * Supabase PKCE flow lands here with a `?code=...` query param. The Supabase
- * client auto-detects the URL and exchanges the code on init (detectSessionInUrl).
- * We just wait for the session to show up, then check the allowlist and bounce.
+ * Runs the System Boot sequence (counter → logo flash → curtain) while the
+ * PKCE exchange + allowlist probe happen in parallel, so the animation from
+ * Google-return → /today feels continuous.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -13,114 +13,185 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { setSessionBeacon, clearSessionBeacon } from '@/lib/sessionCookie'
 
+const INK = '#0A0A0A'
+const PAPER = '#F5F5F2'
+const BOOT_STATUS = ['INIT…', 'AUTH…', 'READY.']
+
+type Result =
+  | { kind: 'ok' }
+  | { kind: 'not_allowed' }
+  | { kind: 'failed' }
+
 export default function AuthCallbackPage() {
   const router = useRouter()
   const supabase = useRef(createClient()).current
-  const [msg, setMsg] = useState('Unlocking…')
 
+  const [counter, setCounter] = useState(0)
+  const [phase, setPhase] = useState<'count' | 'logo' | 'curtain'>('count')
+  const [result, setResult] = useState<Result | null>(null)
+
+  // Kick off auth work immediately.
   useEffect(() => {
     let cancelled = false
-
     ;(async () => {
       const url = new URL(window.location.href)
       const code = url.searchParams.get('code')
       const errParam = url.searchParams.get('error_description') || url.searchParams.get('error')
 
       if (errParam) {
-        if (!cancelled) {
-          setMsg('Sign-in failed. Sending you back…')
-          setTimeout(() => router.replace('/login'), 1200)
-        }
+        if (!cancelled) setResult({ kind: 'failed' })
         return
       }
 
-      // Try to get session. If missing, attempt the exchange.
-      // If that fails, wait a beat and check again — the Supabase client
-      // may have auto-exchanged the code in parallel.
       let session = (await supabase.auth.getSession()).data.session
-
       if (!session && code) {
         const { error } = await supabase.auth.exchangeCodeForSession(code)
         if (cancelled) return
         if (error) {
-          // Give auto-exchange / parallel run a moment to settle.
           await new Promise(r => setTimeout(r, 400))
           if (cancelled) return
-          session = (await supabase.auth.getSession()).data.session
-        } else {
-          session = (await supabase.auth.getSession()).data.session
         }
+        session = (await supabase.auth.getSession()).data.session
       }
-
       if (cancelled) return
 
       if (!session) {
-        setMsg('Sign-in failed. Sending you back…')
-        setTimeout(() => router.replace('/login'), 1200)
+        setResult({ kind: 'failed' })
         return
       }
 
-      // Check allowlist
       const { data: allowed, error: rpcErr } = await supabase.rpc('is_allowed')
       if (cancelled) return
 
       if (rpcErr) {
-        // Don't nuke the session on a transient RPC error — let AuthGate retry.
+        // Let AuthGate re-check; don't nuke the session on a transient error.
         setSessionBeacon()
-        router.replace('/today')
+        setResult({ kind: 'ok' })
         return
       }
-
       if (!allowed) {
         await supabase.auth.signOut()
         clearSessionBeacon()
-        setMsg('Not on the invite list. Sending you back…')
-        setTimeout(() => router.replace('/login?not_allowed=1'), 1500)
+        setResult({ kind: 'not_allowed' })
         return
       }
-
       setSessionBeacon()
-      router.replace('/today')
+      setResult({ kind: 'ok' })
     })()
-
     return () => { cancelled = true }
-  }, [router, supabase])
+  }, [supabase])
+
+  // Counter — ticks up, holds at 99 until auth resolves.
+  useEffect(() => {
+    if (phase !== 'count') return
+    const id = setInterval(() => {
+      setCounter(prev => {
+        if (prev >= 99 && !result) return 99
+        const jump = Math.floor(Math.random() * 4) + 1
+        const next = Math.min(prev + jump, 100)
+        if (next >= 100) {
+          clearInterval(id)
+          setTimeout(() => setPhase('logo'), 180)
+        }
+        return next
+      })
+    }, 32)
+    return () => clearInterval(id)
+  }, [phase, result])
+
+  // Logo flash → curtain → navigate.
+  useEffect(() => {
+    if (phase === 'logo') {
+      const t = setTimeout(() => setPhase('curtain'), 700)
+      return () => clearTimeout(t)
+    }
+    if (phase === 'curtain') {
+      const t = setTimeout(() => {
+        if (!result) return
+        if (result.kind === 'ok') router.replace('/today')
+        else if (result.kind === 'not_allowed') router.replace('/login?not_allowed=1')
+        else router.replace('/login')
+      }, 420)
+      return () => clearTimeout(t)
+    }
+  }, [phase, result, router])
+
+  const statusIdx = counter < 40 ? 0 : counter < 85 ? 1 : 2
 
   return (
     <div
+      className={phase === 'curtain' ? 'gcrm-curtain-anim' : ''}
       style={{
         position: 'fixed',
         inset: 0,
-        background: '#0A0A0A',
-        color: '#F5F5F2',
+        background: INK,
+        color: PAPER,
         display: 'flex',
-        flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
       }}
     >
-      <img
-        src="/logo.png"
-        alt="Giraffe CRM"
-        draggable={false}
-        style={{
-          width: 96,
-          height: 96,
-          objectFit: 'contain',
-          userSelect: 'none',
-          pointerEvents: 'none',
-          animation: 'gcrm-pulse 1.4s ease-in-out infinite',
-        }}
-      />
-      <div style={{ marginTop: 20, fontSize: 11, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.6 }}>
-        {msg}
-      </div>
+      {phase === 'count' && (
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16 }}>
+          <div
+            style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontWeight: 900,
+              fontVariantNumeric: 'tabular-nums',
+              letterSpacing: '-0.05em',
+              lineHeight: 1,
+              fontSize: 'clamp(72px, 18vw, 160px)',
+            }}
+          >
+            {String(counter).padStart(3, '0')}
+          </div>
+          <div
+            style={{
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+              fontSize: 10,
+              letterSpacing: '0.35em',
+              textTransform: 'uppercase',
+              opacity: 0.7,
+            }}
+          >
+            {result?.kind === 'failed'
+              ? 'FAILED'
+              : result?.kind === 'not_allowed'
+              ? 'NOT ALLOWED'
+              : BOOT_STATUS[statusIdx]}
+          </div>
+        </div>
+      )}
+
+      {phase !== 'count' && (
+        <img
+          src="/logo.png"
+          alt="Giraffe CRM"
+          draggable={false}
+          className="gcrm-logo-pop-anim"
+          style={{
+            width: 'clamp(96px, 22vw, 140px)',
+            height: 'clamp(96px, 22vw, 140px)',
+            objectFit: 'contain',
+            userSelect: 'none',
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
       <style jsx global>{`
-        @keyframes gcrm-pulse {
-          0%, 100% { opacity: 1; transform: scale(1); }
-          50%      { opacity: 0.6; transform: scale(0.96); }
+        @keyframes gcrm-curtain {
+          from { transform: translateY(0); }
+          to   { transform: translateY(-100%); }
         }
+        .gcrm-curtain-anim { animation: gcrm-curtain 360ms cubic-bezier(0.76, 0, 0.24, 1) forwards; }
+        @keyframes gcrm-logo-pop {
+          0%   { opacity: 0; transform: scale(0.6); }
+          60%  { opacity: 1; transform: scale(1.08); }
+          100% { opacity: 1; transform: scale(1); }
+        }
+        .gcrm-logo-pop-anim { animation: gcrm-logo-pop 360ms cubic-bezier(0.22, 1, 0.36, 1); }
       `}</style>
     </div>
   )
