@@ -64,15 +64,12 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
   if (state === 'checking') {
     return (
       <div className="fixed inset-0 bg-black flex items-center justify-center">
-        <div className="flex flex-col items-center">
-          <svg viewBox="0 0 64 64" className="w-16 h-16 text-emerald-400 animate-breathe" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path
-              d="M38 8c-1.5 0-2.5 1-3 2l-1 3-3 1c-2 .5-3.5 2.5-3.5 4.5v6L22 28c-4 2-6 6-6 10v15c0 2 1.5 3.5 3.5 3.5S23 55 23 53v-12l3-2v12c0 2 1.5 3.5 3.5 3.5S33 53 33 51V30l2-1v4c0 1.5 1 2.5 2.5 2.5S40 34.5 40 33V18c0-1 .5-2 1.5-2.5l1.5-.5v-2c0-1-.5-2-1.5-2.5l-1-.5.5-2c0-.5-.5-1-1-1zM39 11v2M42 11v2"
-              stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-              fill="currentColor" fillOpacity="0.15"
-            />
-          </svg>
-        </div>
+        <img
+          src="/logo.png"
+          alt="Giraffe CRM"
+          draggable={false}
+          className="w-24 h-24 object-contain select-none pointer-events-none animate-pulse"
+        />
       </div>
     )
   }
