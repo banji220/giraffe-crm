@@ -33,7 +33,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       const session = sessionRes.session
       if (cancelled) return
 
-      if (!session?.user?.phone) {
+      if (!session?.user?.phone && !session?.user?.email) {
         clearSessionBeacon()
         router.replace('/login')
         return
