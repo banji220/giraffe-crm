@@ -117,7 +117,7 @@ function Headline() {
   )
 }
 
-/* ─── Sign in button — minimal, white pill, black text ───────────────────── */
+/* ─── Sign in button — Digital Brutalism / System Boot ───────────────────── */
 function SignInButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
   return (
     <button
@@ -125,48 +125,109 @@ function SignInButton({ onClick, busy }: { onClick: () => void; busy: boolean })
       onClick={onClick}
       disabled={busy}
       aria-label="Sign in with Google"
-      className="group relative w-full h-14 rounded-full flex items-center justify-center gap-3 transition-transform duration-100 ease-out active:scale-[0.98] disabled:opacity-70 disabled:cursor-wait"
-      style={{ background: PAPER, color: INK }}
+      className="group relative w-full overflow-hidden transition-transform duration-100 ease-out active:translate-y-[2px] disabled:opacity-80 disabled:cursor-wait"
+      style={{
+        background: INK,
+        color: PAPER,
+        border: `2px solid ${PAPER}`,
+      }}
     >
-      <GoogleG />
-      <span className="font-bold text-[15px] tracking-[0.02em]">
-        {busy ? 'Opening…' : 'Continue with Google'}
-      </span>
-      {busy && (
-        <svg viewBox="0 0 24 24" className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
-          <path d="M21 12a9 9 0 1 1-6.22-8.56" />
-        </svg>
-      )}
+      {/* Noise overlay — subtle raw texture */}
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-0 opacity-[0.08] mix-blend-screen"
+        style={{
+          backgroundImage:
+            "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 1  0 0 0 0 1  0 0 0 0.6 0'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>\")",
+        }}
+      />
+
+      {/* Top status bar */}
+      <div
+        className="relative flex items-center justify-between px-3 py-1.5 text-[9px] font-mono tracking-[0.25em] uppercase border-b"
+        style={{ borderColor: 'rgba(245,245,242,0.2)', color: 'rgba(245,245,242,0.7)' }}
+      >
+        <span>SYS://AUTH.GOOGLE</span>
+        <span className="flex items-center gap-1.5">
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{ background: PAPER, animation: 'gcrm-blink 1.4s steps(2) infinite' }}
+          />
+          {busy ? 'HANDSHAKE' : 'READY'}
+        </span>
+      </div>
+
+      {/* Main row */}
+      <div className="relative flex items-center gap-3 px-4 py-4">
+        {/* Google G chip — bordered cell */}
+        <span
+          className="flex items-center justify-center w-10 h-10 shrink-0"
+          style={{ background: PAPER, border: `1.5px solid ${PAPER}` }}
+        >
+          <GoogleG />
+        </span>
+
+        {/* Heavy kinetic type: solid + stroked mix */}
+        <span className="flex-1 flex items-baseline gap-2 overflow-hidden">
+          <span
+            className="font-black uppercase leading-none tracking-[-0.01em] text-[22px]"
+            style={{ color: PAPER }}
+          >
+            {busy ? 'Opening' : 'Sign'}
+          </span>
+          <span
+            className="font-black uppercase leading-none tracking-[-0.01em] text-[22px]"
+            style={{
+              color: 'transparent',
+              WebkitTextStroke: `1.25px ${PAPER}`,
+            }}
+          >
+            {busy ? '…' : 'In'}
+          </span>
+        </span>
+
+        {/* Action glyph */}
+        {busy ? (
+          <svg viewBox="0 0 24 24" className="w-5 h-5 shrink-0 animate-spin" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+            <path d="M21 12a9 9 0 1 1-6.22-8.56" />
+          </svg>
+        ) : (
+          <span
+            className="flex items-center justify-center w-8 h-8 shrink-0 transition-transform duration-150 group-active:translate-x-1"
+            style={{ border: `1.5px solid ${PAPER}` }}
+          >
+            <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
+          </span>
+        )}
+      </div>
+
+      {/* Bottom status bar */}
+      <div
+        className="relative flex items-center justify-between px-3 py-1.5 text-[9px] font-mono tracking-[0.25em] uppercase border-t"
+        style={{ borderColor: 'rgba(245,245,242,0.2)', color: 'rgba(245,245,242,0.5)' }}
+      >
+        <span>OAUTH · PKCE</span>
+        <span>[ ENTER ]</span>
+      </div>
     </button>
   )
 }
 
-/* ─── Giraffe mark — inline SVG, no external asset ───────────────────────── */
+/* ─── Giraffe mark — uses /public/logo.png ───────────────────────────────── */
 function GiraffeMark() {
   return (
-    <div
-      className="flex items-center justify-center rounded-2xl"
+    <img
+      src="/logo.png"
+      alt="Giraffe CRM"
+      draggable={false}
+      className="object-contain select-none pointer-events-none"
       style={{
-        width: 'clamp(56px, 14vw, 80px)',
-        height: 'clamp(56px, 14vw, 80px)',
-        background: GOLD,
-        color: INK,
+        width: 'clamp(88px, 18vw, 128px)',
+        height: 'clamp(88px, 18vw, 128px)',
       }}
-    >
-      <svg viewBox="0 0 64 64" className="w-[60%] h-[60%]" fill="none">
-        <text
-          x="32"
-          y="48"
-          textAnchor="middle"
-          fontFamily="ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-          fontWeight="900"
-          fontSize="52"
-          fill={INK}
-        >
-          G
-        </text>
-      </svg>
-    </div>
+    />
   )
 }
 
@@ -225,6 +286,10 @@ function Styles() {
       @keyframes gcrm-marquee {
         0%   { transform: translateX(0); }
         100% { transform: translateX(-50%); }
+      }
+      @keyframes gcrm-blink {
+        0%, 100% { opacity: 1; }
+        50%      { opacity: 0.2; }
       }
     `}</style>
   )
