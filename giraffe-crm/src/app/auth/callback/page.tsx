@@ -6,12 +6,19 @@
  * Supabase PKCE flow lands here with a `?code=...` query param. We exchange
  * it for a session, probe the allowlist, set the cross-subdomain beacon,
  * and either punt into /today or kick back to /login with a message.
+ *
+ * A module-level lock ensures the PKCE code is only exchanged once per
+ * page load — React effect re-runs will short-circuit to waiting for the
+ * in-flight exchange instead of triggering a duplicate failing call.
  */
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { setSessionBeacon, clearSessionBeacon } from '@/lib/sessionCookie'
+
+// Module-level exchange lock — survives React effect re-runs.
+let exchangePromise: Promise<{ ok: boolean }> | null = null
 
 export default function AuthCallbackPage() {
   const router = useRouter()
@@ -20,6 +27,22 @@ export default function AuthCallbackPage() {
 
   useEffect(() => {
     let cancelled = false
+
+    const runExchange = async (code: string) => {
+      if (exchangePromise) return exchangePromise
+      exchangePromise = (async () => {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
+        if (error) {
+          // Exchange failed — check whether a session nevertheless exists
+          // (possible if a parallel tab or prior run already consumed the code).
+          const { data } = await supabase.auth.getSession()
+          return { ok: !!data.session }
+        }
+        return { ok: true }
+      })()
+      return exchangePromise
+    }
+
     ;(async () => {
       const url = new URL(window.location.href)
       const code = url.searchParams.get('code')
@@ -33,24 +56,22 @@ export default function AuthCallbackPage() {
         return
       }
 
-      // If a session already exists (code was exchanged on a prior effect run),
-      // skip the exchange — PKCE codes are single-use and a re-attempt will error.
+      // If a session already exists, skip the exchange entirely.
       const { data: existing } = await supabase.auth.getSession()
       if (cancelled) return
 
-      if (!existing.session && code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(code)
+      let sessionOk = !!existing.session
+
+      if (!sessionOk && code) {
+        const result = await runExchange(code)
         if (cancelled) return
-        if (error) {
-          // Check once more — another effect run may have succeeded in parallel.
-          const { data: retry } = await supabase.auth.getSession()
-          if (cancelled) return
-          if (!retry.session) {
-            setMsg('Sign-in failed. Sending you back…')
-            setTimeout(() => router.replace('/login'), 1200)
-            return
-          }
-        }
+        sessionOk = result.ok
+      }
+
+      if (!sessionOk) {
+        setMsg('Sign-in failed. Sending you back…')
+        setTimeout(() => router.replace('/login'), 1200)
+        return
       }
 
       // Check allowlist
@@ -66,7 +87,6 @@ export default function AuthCallbackPage() {
       }
 
       setSessionBeacon()
-      setMsg('You\u2019re in.')
       router.replace('/today')
     })()
 
