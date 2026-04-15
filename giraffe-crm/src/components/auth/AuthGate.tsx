@@ -17,6 +17,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { setSessionBeacon, clearSessionBeacon } from '@/lib/sessionCookie'
 
 type State = 'checking' | 'ok' | 'denied'
 
@@ -33,6 +34,7 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
       if (cancelled) return
 
       if (!session?.user?.phone) {
+        clearSessionBeacon()
         router.replace('/login')
         return
       }
@@ -42,16 +44,18 @@ export default function AuthGate({ children }: { children: React.ReactNode }) {
 
       if (error || !allowed) {
         await supabase.auth.signOut()
+        clearSessionBeacon()
         router.replace('/login')
         return
       }
 
+      setSessionBeacon()
       setState('ok')
     })()
 
     // Watch for sign-out events in other tabs
     const { data: sub } = supabase.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT') router.replace('/login')
+      if (event === 'SIGNED_OUT') { clearSessionBeacon(); router.replace('/login') }
     })
 
     return () => { cancelled = true; sub.subscription.unsubscribe() }

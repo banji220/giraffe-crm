@@ -137,6 +137,16 @@
 }
 .animate-pulse-once { animation: pulse-once 0.8s ease-out; }
 
+/* Nav badge pulse when a count grows */
+@keyframes badge-pulse {
+  0%, 100% { transform: scale(1); }
+  20%      { transform: scale(1.35); }
+  40%      { transform: scale(0.95); }
+  60%      { transform: scale(1.2); }
+  80%      { transform: scale(1); }
+}
+.animate-badge-pulse { animation: badge-pulse 1.2s ease-out; }
+
 /* Prevent body scroll when sheet is open */
 body:has(.fixed.inset-0) {
   overflow: hidden;

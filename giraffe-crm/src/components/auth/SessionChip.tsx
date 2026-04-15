@@ -15,6 +15,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { toE164, formatAsYouType, last4, formatE164ForDisplay } from '@/lib/phone'
+import { clearSessionBeacon } from '@/lib/sessionCookie'
 
 export default function SessionChip() {
   const router = useRouter()
@@ -45,6 +46,7 @@ export default function SessionChip() {
 
   const signOut = async () => {
     await supabase.auth.signOut()
+    clearSessionBeacon()
     router.replace('/login')
   }
 
