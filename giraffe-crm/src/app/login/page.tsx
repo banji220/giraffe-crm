@@ -1,26 +1,19 @@
 'use client'
 
 /**
- * /login — Giraffe CRM "System Boot" login experience. Google-only.
- *
- * Visual:
- *   1. System boot preloader: 0→100 counter with random speed, cycling status lines,
- *      curtain reveal on complete.
- *   2. Staggered letter-by-letter headline reveal ("Knock, knock." / "Who's there?" / "Giraffe!").
- *   3. Hero Google OAuth button — the only path in.
- *   4. Bottom marquee strip — "KNOCK. QUOTE. CLOSE."
- *
- * Auth logic:
- *   - Supabase signInWithOAuth (Google)
- *   - is_allowed() RPC — invite allowlist check
- *   - Cross-subdomain session beacon on .holygiraffe.com
- *   - ?auto=google → immediately fire Google OAuth (landing-page deep link)
+ * /login — Giraffe CRM. Google-only. Black & white editorial,
+ * emerald reserved exclusively for the word "Giraffe!".
  */
 
 import { useEffect, useRef, useState, Suspense, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { setSessionBeacon } from '@/lib/sessionCookie'
+
+const GIRAFFE_GOLD = '#D4A24C'
+const INK = '#0A0A0A'
+const PAPER = '#F5F5F2'
+const BG = '#0A0A0A'
 
 function haptic(pattern: number | number[] = 10) {
   try { (navigator as any).vibrate?.(pattern) } catch {}
@@ -43,7 +36,6 @@ function LoginInner() {
   const [googleBusy, setGoogleBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
 
-  // If already signed in → skip everything
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session?.user?.phone || data.session?.user?.email) {
@@ -54,7 +46,7 @@ function LoginInner() {
   }, [router, supabase])
 
   const signInWithGoogle = useCallback(async () => {
-    haptic(12)
+    haptic(14)
     setGoogleBusy(true)
     setErr(null)
     const redirectTo = `${window.location.origin}/auth/callback`
@@ -65,51 +57,52 @@ function LoginInner() {
     if (error) { setGoogleBusy(false); setErr(error.message) }
   }, [supabase])
 
-  // ?auto=google → fire Google OAuth as soon as booted
   useEffect(() => {
     if (!booted) return
     if (search.get('auto') === 'google') signInWithGoogle()
   }, [booted, search, signInWithGoogle])
 
-  // ───────────────────────────────────────────────────────────────────────────
   return (
-    <div className="relative min-h-[100svh] flex flex-col overflow-x-hidden" style={{ background: 'oklch(0.07 0 0)', color: 'oklch(0.98 0 0)' }}>
+    <div className="relative min-h-[100dvh] flex flex-col overflow-x-hidden" style={{ background: BG, color: PAPER }}>
       <StyleInjector />
-      <div className="gcrm-noise" aria-hidden />
 
       {!booted && <SystemBootPreloader onComplete={() => setBooted(true)} />}
 
       {booted && (
-        <div className="flex flex-1 flex-col items-center animate-gcrm-fade-in">
-          {/* Hero zone */}
-          <div className="flex min-h-[42svh] flex-col items-center justify-end gap-4 px-6 pb-8 pt-12 sm:px-10">
-            <GiraffeLogo className="w-14 h-14 sm:w-16 sm:h-16" style={{ color: 'oklch(0.72 0.12 75)' }} />
+        <div className="flex flex-1 flex-col items-center animate-gcrm-fade-in pt-10 pb-0">
+          {/* Hero logo + headline */}
+          <div className="flex flex-col items-center gap-6 px-6 sm:px-10 pt-6">
+            <img
+              src="/logo.png"
+              alt="Giraffe CRM"
+              className="w-40 h-40 sm:w-48 sm:h-48 object-contain select-none pointer-events-none animate-gcrm-logo-in"
+              draggable={false}
+            />
             <HeroHeadline />
           </div>
 
-          {/* Controls — thumb zone */}
-          <div className="flex flex-1 flex-col items-center justify-start px-6 sm:px-10">
-            <div className="w-full max-w-sm flex flex-col gap-5 animate-gcrm-slide-up" style={{ animationDelay: '1.2s', animationFillMode: 'backwards' }}>
+          {/* Thumb zone */}
+          <div className="flex flex-1 flex-col items-center justify-end px-6 sm:px-10 pt-10 pb-10 w-full">
+            <div className="w-full max-w-sm flex flex-col gap-6 animate-gcrm-slide-up" style={{ animationDelay: '1.1s', animationFillMode: 'backwards' }}>
 
               <GoogleHeroButton onClick={signInWithGoogle} busy={googleBusy} />
 
               {err && (
-                <p className="text-center font-mono text-xs tracking-wider text-rose-400 animate-gcrm-fade-in">
+                <p className="text-center font-mono text-xs tracking-wider animate-gcrm-fade-in" style={{ color: PAPER }}>
                   {err}
                 </p>
               )}
 
-              <div className="flex items-center gap-3 pt-2">
-                <div className="h-px flex-1" style={{ background: 'oklch(0.25 0 0)' }} />
-                <span className="font-mono text-[10px] tracking-[0.3em]" style={{ color: 'oklch(0.55 0 0)' }}>
+              <div className="flex items-center gap-3">
+                <div className="h-px flex-1" style={{ background: 'rgba(245,245,242,0.2)' }} />
+                <span className="font-mono text-[10px] tracking-[0.35em]" style={{ color: 'rgba(245,245,242,0.5)' }}>
                   INVITE ONLY
                 </span>
-                <div className="h-px flex-1" style={{ background: 'oklch(0.25 0 0)' }} />
+                <div className="h-px flex-1" style={{ background: 'rgba(245,245,242,0.2)' }} />
               </div>
 
-              <p className="text-center font-mono text-[10px] tracking-[0.15em] leading-relaxed" style={{ color: 'oklch(0.55 0 0)' }}>
-                Your Google account must be on the allowlist.<br />
-                Ask whoever sent you if you&apos;re not in yet.
+              <p className="text-center font-mono text-[10px] tracking-[0.2em] leading-loose uppercase" style={{ color: 'rgba(245,245,242,0.5)' }}>
+                Your Google account must be<br />on the allowlist.
               </p>
             </div>
           </div>
@@ -121,60 +114,71 @@ function LoginInner() {
   )
 }
 
-/* ─── Google Hero Button — Soft Pop Neo-Brutalism ────────────────────────── */
+/* ─── Google Hero Button — black & white brutalist stamp ─────────────────── */
 function GoogleHeroButton({ onClick, busy }: { onClick: () => void; busy: boolean }) {
   return (
-    <div className="relative pb-2 pr-2">
-      {/* Shadow block — sits behind button, gets "absorbed" on press */}
+    <div className="relative pb-[8px] pr-[8px]">
+      {/* Hard black shadow block */}
       <div
         aria-hidden
-        className="absolute inset-0 translate-x-[6px] translate-y-[6px] rounded-2xl"
-        style={{ background: '#0F0F0F' }}
+        className="absolute inset-0 translate-x-[8px] translate-y-[8px] rounded-2xl"
+        style={{ background: PAPER }}
       />
 
       <button
         type="button"
         onClick={onClick}
         disabled={busy}
-        className="gcrm-pop-btn relative w-full rounded-2xl border-[3px] border-black transition-transform duration-100 ease-out active:translate-x-[6px] active:translate-y-[6px] disabled:opacity-80 disabled:cursor-wait overflow-hidden"
+        aria-label="Sign in with Google"
+        className="relative w-full rounded-2xl border-[3px] transition-transform duration-100 ease-out active:translate-x-[8px] active:translate-y-[8px] disabled:opacity-85 disabled:cursor-wait overflow-hidden"
         style={{
-          background: '#FFE85C', // pastel yellow
-          color: '#0F0F0F',
+          background: PAPER,
+          borderColor: PAPER,
+          color: INK,
         }}
       >
-        {/* Inner stripe accent */}
+        {/* Hatch stripe along the top */}
         <span
           aria-hidden
-          className="pointer-events-none absolute top-0 left-0 right-0 h-2"
-          style={{ background: 'repeating-linear-gradient(90deg, #0F0F0F 0 12px, transparent 12px 24px)' }}
+          className="pointer-events-none absolute top-0 left-0 right-0 h-[10px]"
+          style={{ background: `repeating-linear-gradient(90deg, ${INK} 0 10px, transparent 10px 20px)` }}
         />
 
-        <div className="relative flex items-center justify-center gap-3 py-6 px-6 pt-7">
-          <div className="flex items-center justify-center w-11 h-11 rounded-xl border-[2.5px] border-black bg-white">
+        <div className="relative flex items-center justify-center gap-3 py-6 pt-8 px-6">
+          <div className="flex items-center justify-center w-10 h-10 rounded-xl border-[2.5px] shrink-0" style={{ background: PAPER, borderColor: INK }}>
             <GoogleG />
           </div>
-          <div className="flex flex-col items-start leading-tight">
-            <span className="font-mono text-[10px] tracking-[0.25em] opacity-70">TAP TO</span>
-            <span className="font-black text-xl uppercase tracking-tight">
-              {busy ? 'Opening…' : 'Sign in'}
-            </span>
-          </div>
-          {!busy ? (
-            <svg viewBox="0 0 24 24" className="ml-auto w-7 h-7 transition-transform group-active:translate-x-1" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M5 12h14M13 5l7 7-7 7" />
-            </svg>
-          ) : (
-            <svg viewBox="0 0 24 24" className="ml-auto w-7 h-7 animate-spin" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+
+          <span className="font-black text-[22px] sm:text-2xl uppercase tracking-[0.02em] leading-none">
+            {busy ? 'Opening…' : 'Sign in'}
+          </span>
+
+          {busy ? (
+            <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0 animate-spin" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
               <path d="M21 12a9 9 0 1 1-6.22-8.56" />
             </svg>
+          ) : (
+            <svg viewBox="0 0 24 24" className="w-6 h-6 shrink-0" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M5 12h14M13 5l7 7-7 7" />
+            </svg>
           )}
+        </div>
+
+        {/* Bottom caption bar */}
+        <div
+          className="relative flex items-center justify-center gap-2 py-2 border-t-[2px]"
+          style={{ borderColor: 'rgba(10,10,10,0.18)', background: 'rgba(10,10,10,0.06)' }}
+        >
+          <span className="font-mono text-[9px] tracking-[0.35em]" style={{ color: 'rgba(10,10,10,0.7)' }}>
+            VIA GOOGLE · SECURE · ONE TAP
+          </span>
         </div>
       </button>
     </div>
   )
 }
 
-/* ─── System Boot Preloader ──────────────────────────────────────────────── */
+/* ─── Boot preloader ─────────────────────────────────────────────────────── */
 const STATUS_LINES = ['INITIALIZING AUTH…', 'LOADING TERRITORY…', 'SECURING CHANNEL…', 'BOOT COMPLETE.']
 
 function SystemBootPreloader({ onComplete }: { onComplete: () => void }) {
@@ -212,19 +216,19 @@ function SystemBootPreloader({ onComplete }: { onComplete: () => void }) {
   return (
     <div
       className={`fixed inset-0 z-50 flex flex-col items-center justify-center ${closing ? 'animate-gcrm-curtain-up' : ''}`}
-      style={{ background: 'oklch(0.07 0 0)' }}
+      style={{ background: BG }}
     >
       <div className="flex flex-col items-center gap-6">
-        <div className="font-mono text-7xl sm:text-9xl font-black tracking-tighter tabular-nums" style={{ color: 'oklch(0.98 0 0)' }}>
+        <div className="font-mono text-7xl sm:text-9xl font-black tracking-tighter tabular-nums" style={{ color: PAPER }}>
           {String(counter).padStart(3, '0')}
         </div>
-        <p key={lineIndex} className="font-mono text-xs tracking-[0.3em] animate-gcrm-line" style={{ color: 'oklch(0.72 0.12 75)' }}>
+        <p key={lineIndex} className="font-mono text-xs tracking-[0.3em] animate-gcrm-line" style={{ color: PAPER }}>
           {STATUS_LINES[lineIndex]}
         </p>
       </div>
       <div className="absolute bottom-8 left-8 flex items-center gap-2">
-        <GiraffeLogo className="w-5 h-5 opacity-60" />
-        <span className="font-mono text-[10px] tracking-[0.2em]" style={{ color: 'oklch(0.55 0 0)' }}>
+        <img src="/logo.png" alt="" className="w-5 h-5 opacity-70 object-contain" />
+        <span className="font-mono text-[10px] tracking-[0.2em]" style={{ color: 'rgba(245,245,242,0.5)' }}>
           GIRAFFE CRM v1.0
         </span>
       </div>
@@ -234,13 +238,13 @@ function SystemBootPreloader({ onComplete }: { onComplete: () => void }) {
 
 function BootShell({ label }: { label: string }) {
   return (
-    <div className="fixed inset-0 flex items-center justify-center" style={{ background: 'oklch(0.07 0 0)', color: 'oklch(0.98 0 0)' }}>
+    <div className="fixed inset-0 flex items-center justify-center" style={{ background: BG, color: PAPER }}>
       <p className="font-mono text-xs tracking-[0.3em]">{label}</p>
     </div>
   )
 }
 
-/* ─── Hero headline — staggered letter reveal ───────────────────────────── */
+/* ─── Kinetic headline — emerald reserved for "Giraffe!" only ───────────── */
 const HERO_LINES = ['Knock, knock.', "Who's there?", 'Giraffe!']
 
 function HeroHeadline() {
@@ -250,17 +254,17 @@ function HeroHeadline() {
         <div key={lineIdx} className="overflow-hidden">
           <div className="flex flex-wrap justify-center">
             {line.split('').map((ch, charIdx) => {
-              const delay = 100 + lineIdx * 250 + charIdx * 25
+              const delay = 100 + lineIdx * 220 + charIdx * 22
               const stroked = lineIdx === 1
               const emerald = lineIdx === 2
               return (
                 <span
                   key={`${lineIdx}-${charIdx}`}
-                  className="inline-block text-4xl sm:text-5xl md:text-6xl font-black uppercase leading-none tracking-tight animate-gcrm-letter"
+                  className="inline-block text-[40px] sm:text-6xl font-black uppercase leading-[0.95] tracking-[-0.02em] animate-gcrm-letter"
                   style={{
                     animationDelay: `${delay}ms`,
                     animationFillMode: 'backwards',
-                    color: emerald ? 'oklch(0.72 0.12 75)' : stroked ? 'transparent' : 'oklch(0.98 0 0)',
+                    color: emerald ? GIRAFFE_GOLD : stroked ? 'transparent' : PAPER,
                     WebkitTextStroke: stroked ? '1.5px currentColor' : undefined,
                   }}
                 >
@@ -275,33 +279,43 @@ function HeroHeadline() {
   )
 }
 
-/* ─── Marquee strip — two-track seamless scroll ─────────────────────────── */
+/* ─── Marquee — black & white ───────────────────────────────────────────── */
 function MarqueeStrip() {
-  const TEXT = 'KNOCK. QUOTE. CLOSE. '
-  const track = Array.from({ length: 8 }).map((_, i) => (
-    <span key={i} className="mx-6 inline-flex items-center gap-6">
-      {TEXT}
-      <span className="inline-block w-2 h-2 rounded-full" style={{ background: '#0F0F0F' }} />
-    </span>
-  ))
+  const TEXT = 'KNOCK. QUOTE. CLOSE.'
+  const renderTrack = (ariaHidden?: boolean) => (
+    <div className="flex shrink-0 items-center" aria-hidden={ariaHidden}>
+      {Array.from({ length: 8 }).map((_, i) => (
+        <span key={i} className="flex items-center gap-6 pr-6 pl-6">
+          <span>{TEXT}</span>
+          <span className="inline-block w-2 h-2 rounded-full" style={{ background: INK }} />
+        </span>
+      ))}
+    </div>
+  )
 
   return (
-    <div
-      className="w-full overflow-hidden py-4 border-y-[3px] border-black"
-      style={{ background: '#FFE85C', color: '#0F0F0F' }}
-    >
-      <div className="flex whitespace-nowrap animate-gcrm-marquee font-black text-base tracking-[0.15em] uppercase will-change-transform">
-        <div className="flex shrink-0">{track}</div>
-        <div className="flex shrink-0" aria-hidden>{track}</div>
+    <>
+      <div
+        className="w-full overflow-hidden py-4 border-y-[3px]"
+        style={{ background: PAPER, color: INK, borderColor: INK }}
+      >
+        <div
+          className="flex whitespace-nowrap font-black text-base tracking-[0.12em] uppercase will-change-transform"
+          style={{ animation: 'gcrm-marquee-x 22s linear infinite' }}
+        >
+          {renderTrack()}
+          {renderTrack(true)}
+        </div>
       </div>
-    </div>
+      <div aria-hidden className="w-full h-[20vh]" style={{ background: BG }} />
+    </>
   )
 }
 
 /* ─── Icons ─────────────────────────────────────────────────────────────── */
 function GoogleG() {
   return (
-    <svg viewBox="0 0 24 24" className="w-6 h-6" aria-hidden>
+    <svg viewBox="0 0 24 24" className="w-5 h-5" aria-hidden>
       <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
       <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
       <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
@@ -310,34 +324,20 @@ function GoogleG() {
   )
 }
 
-function GiraffeLogo({ className, style }: { className?: string; style?: React.CSSProperties }) {
-  return (
-    <svg viewBox="0 0 64 64" className={className} style={style} fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-      <path
-        d="M38 8c-1.5 0-2.5 1-3 2l-1 3-3 1c-2 .5-3.5 2.5-3.5 4.5v6L22 28c-4 2-6 6-6 10v15c0 2 1.5 3.5 3.5 3.5S23 55 23 53v-12l3-2v12c0 2 1.5 3.5 3.5 3.5S33 53 33 51V30l2-1v4c0 1.5 1 2.5 2.5 2.5S40 34.5 40 33V18c0-1 .5-2 1.5-2.5l1.5-.5v-2c0-1-.5-2-1.5-2.5l-1-.5.5-2c0-.5-.5-1-1-1zM39 11v2M42 11v2"
-        stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-        fill="currentColor" fillOpacity="0.15"
-      />
-    </svg>
-  )
-}
-
-/* ─── Style injector — keyframes + noise overlay ────────────────────────── */
+/* ─── Style injector — lean, no infinite ambient animations ──────────────── */
 function StyleInjector() {
   return (
     <style jsx global>{`
-      .gcrm-noise {
-        position: fixed; inset: 0; pointer-events: none; z-index: 9999;
-        opacity: 0.04;
-        background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-        background-size: 128px 128px;
+      html, body {
+        background: ${BG};
+        overscroll-behavior-y: none;
       }
 
       @keyframes gcrm-letter {
         from { opacity: 0; transform: translateY(40px) rotateX(90deg); }
         to   { opacity: 1; transform: translateY(0)    rotateX(0deg); }
       }
-      .animate-gcrm-letter { animation: gcrm-letter 350ms cubic-bezier(0.22, 1, 0.36, 1); }
+      .animate-gcrm-letter { animation: gcrm-letter 380ms cubic-bezier(0.22, 1, 0.36, 1); }
 
       @keyframes gcrm-curtain-up {
         from { transform: translateY(0); }
@@ -355,7 +355,7 @@ function StyleInjector() {
         from { opacity: 0; transform: translateY(20px); }
         to   { opacity: 1; transform: translateY(0); }
       }
-      .animate-gcrm-slide-up { animation: gcrm-slide-up 400ms cubic-bezier(0.22, 1, 0.36, 1); }
+      .animate-gcrm-slide-up { animation: gcrm-slide-up 500ms cubic-bezier(0.22, 1, 0.36, 1); }
 
       @keyframes gcrm-line {
         from { opacity: 0; transform: translateY(6px); }
@@ -363,18 +363,16 @@ function StyleInjector() {
       }
       .animate-gcrm-line { animation: gcrm-line 180ms ease-out; }
 
-      @keyframes gcrm-marquee {
-        0%   { transform: translate3d(0, 0, 0); }
-        100% { transform: translate3d(-50%, 0, 0); }
+      @keyframes gcrm-marquee-x {
+        0%   { transform: translateX(0); }
+        100% { transform: translateX(-50%); }
       }
-      .animate-gcrm-marquee { animation: gcrm-marquee 22s linear infinite; }
 
-      @keyframes gcrm-shimmer {
-        0%   { transform: translateX(-100%); }
-        60%  { transform: translateX(100%); }
-        100% { transform: translateX(100%); }
+      @keyframes gcrm-logo-in {
+        from { opacity: 0; transform: scale(0.6); filter: blur(8px); }
+        to   { opacity: 1; transform: scale(1);   filter: blur(0); }
       }
-      .animate-gcrm-shimmer { animation: gcrm-shimmer 2.8s ease-in-out infinite; animation-delay: 1.6s; }
+      .animate-gcrm-logo-in { animation: gcrm-logo-in 600ms cubic-bezier(0.22, 1, 0.36, 1); }
     `}</style>
   )
 }
