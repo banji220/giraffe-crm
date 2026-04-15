@@ -61,15 +61,41 @@ export default function AuthCallbackPage() {
   }, [router, supabase])
 
   return (
-    <div className="fixed inset-0 bg-black flex flex-col items-center justify-center text-white">
-      <svg viewBox="0 0 64 64" className="w-16 h-16 text-emerald-400 animate-breathe" fill="none">
-        <path
-          d="M38 8c-1.5 0-2.5 1-3 2l-1 3-3 1c-2 .5-3.5 2.5-3.5 4.5v6L22 28c-4 2-6 6-6 10v15c0 2 1.5 3.5 3.5 3.5S23 55 23 53v-12l3-2v12c0 2 1.5 3.5 3.5 3.5S33 53 33 51V30l2-1v4c0 1.5 1 2.5 2.5 2.5S40 34.5 40 33V18c0-1 .5-2 1.5-2.5l1.5-.5v-2c0-1-.5-2-1.5-2.5l-1-.5.5-2c0-.5-.5-1-1-1zM39 11v2M42 11v2"
-          stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
-          fill="currentColor" fillOpacity="0.15"
-        />
-      </svg>
-      <div className="mt-4 text-sm text-white/60">{msg}</div>
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        background: '#0A0A0A',
+        color: '#F5F5F2',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        fontFamily: 'ui-sans-serif, system-ui, -apple-system, sans-serif',
+      }}
+    >
+      <img
+        src="/logo.png"
+        alt="Giraffe CRM"
+        draggable={false}
+        style={{
+          width: 96,
+          height: 96,
+          objectFit: 'contain',
+          userSelect: 'none',
+          pointerEvents: 'none',
+          animation: 'gcrm-pulse 1.4s ease-in-out infinite',
+        }}
+      />
+      <div style={{ marginTop: 20, fontSize: 11, letterSpacing: '0.3em', textTransform: 'uppercase', opacity: 0.6 }}>
+        {msg}
+      </div>
+      <style jsx global>{`
+        @keyframes gcrm-pulse {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50%      { opacity: 0.6; transform: scale(0.96); }
+        }
+      `}</style>
     </div>
   )
 }
