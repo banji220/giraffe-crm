@@ -1,6 +1,5 @@
 // Auto-generated types for Supabase tables.
-// In a future step we can run `supabase gen types typescript` to get exact types.
-// For now, these match schema.sql exactly.
+// Updated for schema 007: houses absorb leads + customers.
 
 export type KnockOutcome =
   | 'not_home'
@@ -13,20 +12,16 @@ export type KnockOutcome =
   | 'appointment_set'
   | 'closed_on_spot'
 
-export type HouseState =
-  | 'unknocked'
-  | 'cold'
-  | 'working'
+/** House status — TEXT column with CHECK constraint (not an enum) */
+export type HouseStatus =
+  | 'lead'
+  | 'quoted'
   | 'customer'
   | 'dead'
   | 'avoid'
 
-export type LeadState =
-  | 'new'
-  | 'quoted'
-  | 'won'
-  | 'lost'
-  | 'nurture'
+/** Knock type — broadened from door-only to multi-channel */
+export type KnockType = 'door' | 'call' | 'text' | 'quote'
 
 export type ServiceType =
   | 'exterior'
@@ -41,8 +36,11 @@ export type JobStatus =
   | 'completed'
   | 'cancelled'
 
+// ── Core entities ─────────────────────────────────────────────────────
+
 export interface House {
   id: string
+  // Address
   street_number: string | null
   street_name: string | null
   unit: string | null
@@ -51,11 +49,28 @@ export interface House {
   postal_code: string | null
   full_address: string | null
   geom: unknown // PostGIS geography — handled by server queries
-  state: HouseState
-  is_avoid: boolean
-  avoid_reason: string | null
+  // Status (null = no interaction yet)
+  status: HouseStatus | null
   dead_until: string | null
   dead_reason: KnockOutcome | null
+  // Contact (absorbed from leads/customers)
+  contact_name: string | null
+  contact_phone: string | null
+  contact_email: string | null
+  // Tracking
+  last_knock_at: string | null
+  next_follow_up_at: string | null
+  knock_count: number
+  // Pricing
+  quoted_price: number | null
+  anchor_price: number | null
+  window_count: number | null
+  service_types: ServiceType[]
+  // Lifetime (absorbed from customers)
+  lifetime_value: number
+  total_jobs: number
+  reclean_due_at: string | null
+  // Meta
   notes: string | null
   tags: string[]
   created_at: string
@@ -67,6 +82,7 @@ export interface House {
 export interface Knock {
   id: string
   house_id: string
+  type: KnockType
   outcome: KnockOutcome
   note: string | null
   follow_up_at: string | null
@@ -75,58 +91,9 @@ export interface Knock {
   created_by: string
 }
 
-export interface Lead {
-  id: string
-  house_id: string
-  full_name: string | null
-  phone: string | null
-  email: string | null
-  state: LeadState
-  window_count: number | null
-  service_types: ServiceType[]
-  base_price: number | null
-  anchor_price: number | null
-  discount_type: string | null
-  discount_value: number | null
-  discount_code: string | null
-  final_price: number | null
-  next_touch_at: string | null
-  last_touch_at: string | null
-  touch_count: number
-  nurture_wake_at: string | null
-  source_knock_id: string | null
-  notes: string | null
-  created_at: string
-  updated_at: string
-  created_by: string
-  assigned_to: string | null
-}
-
-export interface Customer {
-  id: string
-  house_id: string
-  source_lead_id: string | null
-  full_name: string
-  phone: string | null
-  email: string | null
-  first_job_at: string | null
-  last_job_at: string | null
-  total_jobs: number
-  lifetime_value: number
-  reclean_due_at: string | null
-  review_requested_at: string | null
-  review_left_at: string | null
-  notes: string | null
-  tags: string[]
-  created_at: string
-  updated_at: string
-}
-
 export interface Job {
   id: string
   house_id: string
-  lead_id: string | null
-  customer_id: string | null
   scheduled_at: string
   completed_at: string | null
   status: JobStatus
@@ -141,26 +108,114 @@ export interface Job {
   assigned_to: string | null
 }
 
-// Supabase client type helper
+// ── Knock tracker types (ported from contribution-heatmap) ────────────
+
+export interface DailyStats {
+  id: string
+  user_id: string
+  date: string
+  doors: number
+  conversations: number
+  leads: number
+  appointments: number
+  wins: number
+  notes: string | null
+  created_at: string
+  updated_at: string
+}
+
+export interface UserSettings {
+  id: string
+  user_id: string
+  daily_target: number
+  weekly_target: number
+  created_at: string
+  updated_at: string
+}
+
+export interface AllowedPhone {
+  id: string
+  phone: string | null
+  email: string | null
+  label: string | null
+  invited_by: string | null
+  created_at: string
+}
+
+// ── Return type for get_houses_in_bbox RPC ────────────────────────────
+
+export interface HouseBbox {
+  id: string
+  full_address: string | null
+  street_number: string | null
+  street_name: string | null
+  city: string | null
+  status: HouseStatus | null
+  dead_until: string | null
+  dead_reason: KnockOutcome | null
+  notes: string | null
+  lat: number
+  lng: number
+  contact_name: string | null
+  contact_phone: string | null
+  quoted_price: number | null
+  last_knock_outcome: KnockOutcome | null
+  last_knock_at: string | null
+  next_follow_up_at: string | null
+  knock_count: number
+}
+
+// ── Supabase client type helper ───────────────────────────────────────
+
 export interface Database {
   public: {
     Tables: {
-      houses: { Row: House; Insert: Partial<House> & { geom: unknown }; Update: Partial<House> }
-      knocks: { Row: Knock; Insert: Pick<Knock, 'house_id' | 'outcome'> & Partial<Knock>; Update: Partial<Knock> }
-      leads: { Row: Lead; Insert: Partial<Lead> & { house_id: string }; Update: Partial<Lead> }
-      customers: { Row: Customer; Insert: Partial<Customer> & { house_id: string; full_name: string }; Update: Partial<Customer> }
-      jobs: { Row: Job; Insert: Partial<Job> & { house_id: string; scheduled_at: string; price: number }; Update: Partial<Job> }
+      houses: {
+        Row: House
+        Insert: Partial<House> & { geom: unknown }
+        Update: Partial<House>
+      }
+      knocks: {
+        Row: Knock
+        Insert: Pick<Knock, 'house_id' | 'outcome'> & Partial<Knock>
+        Update: Partial<Knock>
+      }
+      jobs: {
+        Row: Job
+        Insert: Partial<Job> & { house_id: string; scheduled_at: string; price: number }
+        Update: Partial<Job>
+      }
+      daily_stats: {
+        Row: DailyStats
+        Insert: Partial<DailyStats> & { user_id: string; date: string }
+        Update: Partial<DailyStats>
+      }
+      user_settings: {
+        Row: UserSettings
+        Insert: Partial<UserSettings> & { user_id: string }
+        Update: Partial<UserSettings>
+      }
+      allowed_phones: {
+        Row: AllowedPhone
+        Insert: Partial<AllowedPhone>
+        Update: Partial<AllowedPhone>
+      }
     }
-    Views: {
-      v_followups_due: { Row: any }
-      v_quotes_expiring: { Row: any }
-      v_week_booked: { Row: any }
+    Views: Record<string, never>
+    Functions: {
+      get_houses_in_bbox: {
+        Args: {
+          min_lng: number
+          min_lat: number
+          max_lng: number
+          max_lat: number
+          max_rows?: number
+        }
+        Returns: HouseBbox[]
+      }
     }
-    Functions: Record<string, never>
     Enums: {
       knock_outcome: KnockOutcome
-      house_state: HouseState
-      lead_state: LeadState
       service_type: ServiceType
       job_status: JobStatus
     }

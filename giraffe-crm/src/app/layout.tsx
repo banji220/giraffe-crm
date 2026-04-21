@@ -11,7 +11,7 @@ export const viewport: Viewport = {
   initialScale: 1,
   maximumScale: 1,       // prevents pinch zoom on forms — keeps one-hand control
   userScalable: false,
-  themeColor: '#1E3A8A',
+  themeColor: '#8B5E2A',  // warm amber — oklch(0.65 0.22 45) approximation
 }
 
 export default function RootLayout({
@@ -32,7 +32,7 @@ export default function RootLayout({
           rel="stylesheet"
         />
       </head>
-      <body className="bg-gray-50 text-gray-900 antialiased min-h-screen">
+      <body className="bg-background text-foreground antialiased min-h-screen">
         {children}
       </body>
     </html>
