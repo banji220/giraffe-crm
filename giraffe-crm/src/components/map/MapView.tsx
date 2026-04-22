@@ -7,7 +7,7 @@ import HouseCard from '@/components/map/HouseCard'
 import { type SheetHouse } from '@/components/map/KnockSheet'
 import SessionChip from '@/components/auth/SessionChip'
 import QuoteForm, { type QuoteData } from '@/components/quote/QuoteForm'
-import type { KnockOutcome, HouseState } from '@/types/database'
+import type { KnockOutcome, HouseStatus } from '@/types/database'
 
 // Pin colors keyed by LAST KNOCK OUTCOME — each disposition gets its own color.
 // Palette uses strict 40° hue spacing (360° / 9 outcomes) for maximum perceptual
@@ -43,8 +43,8 @@ const OUTCOME_LABELS: Record<string, string> = {
 }
 
 // Determine the right pin color for a house
-function getPinColor(house: { last_knock_outcome: KnockOutcome | null; is_avoid: boolean }): string {
-  if (house.is_avoid) return OUTCOME_COLORS._avoid
+function getPinColor(house: { last_knock_outcome: KnockOutcome | null; status: HouseStatus | null }): string {
+  if (house.status === 'avoid') return OUTCOME_COLORS._avoid
   if (!house.last_knock_outcome) return OUTCOME_COLORS._unknocked
   return OUTCOME_COLORS[house.last_knock_outcome] ?? OUTCOME_COLORS._unknocked
 }
@@ -62,18 +62,19 @@ interface MapHouse {
   street_number: string
   street_name: string
   city: string
-  state: HouseState
-  is_avoid: boolean
+  status: HouseStatus | null
   dead_until: string | null
   dead_reason: KnockOutcome | null
   notes: string | null
   lat: number
   lng: number
+  contact_name: string | null
+  contact_phone: string | null
+  quoted_price: number | null
   last_knock_outcome: KnockOutcome | null
   last_knock_at: string | null
-  open_lead_id: string | null
-  open_lead_state: string | null
-  open_lead_name: string | null
+  next_follow_up_at: string | null
+  knock_count: number
 }
 
 // Helper: load a CDN script once, return when ready
@@ -147,7 +148,7 @@ export default function MapView() {
     const geojson: GeoJSON.FeatureCollection = {
       type: 'FeatureCollection',
       features: houses.map(h => {
-        const outcome = h.is_avoid ? '_avoid' : (h.last_knock_outcome ?? '_unknocked')
+        const outcome = h.status === 'avoid' ? '_avoid' : (h.last_knock_outcome ?? '_unknocked')
         return {
           type: 'Feature',
           geometry: { type: 'Point', coordinates: [h.lng, h.lat] },
@@ -157,7 +158,7 @@ export default function MapView() {
             color: getPinColor(h),
             label: OUTCOME_LABELS[outcome] ?? '?',
             address: h.full_address ?? '',
-            isAvoid: h.is_avoid ? 1 : 0,
+            isAvoid: h.status === 'avoid' ? 1 : 0,
           },
         }
       }),
@@ -492,7 +493,7 @@ export default function MapView() {
     const sheetHouse: SheetHouse = {
       id: newHouse.id,
       fullAddress: newHouse.full_address ?? '',
-      state: newHouse.state as HouseState,
+      status: null,
       lat,
       lng,
     }
@@ -505,14 +506,14 @@ export default function MapView() {
     setSelectedHouse({
       id: house.id,
       fullAddress: house.full_address ?? '',
-      state: house.state,
+      status: house.status,
       deadReason: house.dead_reason,
       deadUntil: house.dead_until,
       lastKnockOutcome: house.last_knock_outcome,
       lastKnockAt: house.last_knock_at,
-      openLeadId: house.open_lead_id,
-      openLeadState: house.open_lead_state,
-      openLeadName: house.open_lead_name,
+      contactName: house.contact_name,
+      contactPhone: house.contact_phone,
+      quotedPrice: house.quoted_price,
       lat: house.lat,
       lng: house.lng,
     })
@@ -547,6 +548,7 @@ export default function MapView() {
   const handleQuoteSubmit = async (data: QuoteData) => {
     if (!selectedHouse) return
 
+    // 1. Record the knock (trigger auto-updates house status)
     const { error: knockError } = await supabase.current.from('knocks').insert({
       house_id: selectedHouse.id,
       outcome: data.outcome,
@@ -559,40 +561,25 @@ export default function MapView() {
       return
     }
 
-    await new Promise(r => setTimeout(r, 200))
+    // 2. Update house with contact + pricing info (no leads table anymore)
+    await supabase.current
+      .from('houses')
+      .update({
+        contact_name: data.fullName || null,
+        contact_phone: data.phone || null,
+        contact_email: data.email || null,
+        notes: data.notes || null,
+        window_count: data.windowCount,
+        service_types: data.serviceTypes,
+        anchor_price: data.anchorPrice,
+        quoted_price: data.finalPrice,
+      })
+      .eq('id', selectedHouse.id)
 
-    const { data: leads } = await supabase.current
-      .from('leads')
-      .select('id')
-      .eq('house_id', selectedHouse.id)
-      .in('state', ['new', 'quoted', 'won'])
-      .order('created_at', { ascending: false })
-      .limit(1)
-
-    if (leads && leads.length > 0) {
-      await supabase.current
-        .from('leads')
-        .update({
-          full_name: data.fullName || null,
-          phone: data.phone || null,
-          email: data.email || null,
-          notes: data.notes || null,
-          window_count: data.windowCount,
-          service_types: data.serviceTypes,
-          base_price: data.basePrice,
-          anchor_price: data.anchorPrice,
-          final_price: data.finalPrice,
-          discount_type: data.discountType,
-          discount_value: data.discountValue,
-          discount_code: data.discountCode,
-        })
-        .eq('id', leads[0].id)
-    }
-
+    // 3. Create job if closed on spot
     if (data.outcome === 'closed_on_spot' && data.scheduledAt) {
       await supabase.current.from('jobs').insert({
         house_id: selectedHouse.id,
-        lead_id: leads?.[0]?.id ?? null,
         scheduled_at: data.scheduledAt,
         price: data.finalPrice,
         service_types: data.serviceTypes,
@@ -612,7 +599,7 @@ export default function MapView() {
 
     await supabase.current
       .from('houses')
-      .update({ is_avoid: true, state: 'avoid' })
+      .update({ status: 'avoid' })
       .eq('id', selectedHouse.id)
 
     setSelectedHouse(null)

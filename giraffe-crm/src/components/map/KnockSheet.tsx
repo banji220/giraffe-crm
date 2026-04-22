@@ -1,20 +1,20 @@
 'use client'
 
 import { useState } from 'react'
-import type { KnockOutcome, HouseState } from '@/types/database'
+import type { KnockOutcome, HouseStatus } from '@/types/database'
 
 /** The house data passed in from the map when a pin is tapped */
 export interface SheetHouse {
   id: string
   fullAddress: string
-  state: HouseState
+  status: HouseStatus | null
   deadReason?: KnockOutcome | null
   deadUntil?: string | null
   lastKnockOutcome?: KnockOutcome | null
   lastKnockAt?: string | null
-  openLeadId?: string | null
-  openLeadState?: string | null
-  openLeadName?: string | null
+  contactName?: string | null
+  contactPhone?: string | null
+  quotedPrice?: number | null
   lat: number
   lng: number
 }
@@ -120,8 +120,8 @@ export default function KnockSheet({ house, onClose, onKnock, onOpenQuote, onMar
     setLoading(false)
   }
 
-  // Reawaken context for previously dead houses
-  const isReawakened = house.state === 'unknocked' && house.deadReason
+  // Reawaken context for previously dead houses (status null + dead_reason means it expired)
+  const isReawakened = house.status === null && house.deadReason
   const reawakendMessage = isReawakened
     ? `Reawakened from "${outcomeLabel(house.deadReason!)}" — try again!`
     : null
@@ -158,10 +158,12 @@ export default function KnockSheet({ house, onClose, onKnock, onOpenQuote, onMar
             </p>
           )}
 
-          {/* Open lead context */}
-          {house.openLeadName && house.openLeadState && (
+          {/* Contact + price context */}
+          {house.contactName && (
             <p className="text-sm text-blue-600 mt-0.5">
-              Active lead: {house.openLeadName} ({house.openLeadState})
+              {house.contactName}
+              {house.quotedPrice ? ` · $${house.quotedPrice}` : ''}
+              {house.status ? ` (${house.status})` : ''}
             </p>
           )}
         </div>

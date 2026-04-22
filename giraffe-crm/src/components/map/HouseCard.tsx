@@ -23,7 +23,7 @@
 
 import { useEffect, useState, useMemo } from 'react'
 import { createClient } from '@/lib/supabase/client'
-import type { KnockOutcome, HouseState, LeadState, JobStatus } from '@/types/database'
+import type { KnockOutcome, HouseStatus, JobStatus } from '@/types/database'
 import type { SheetHouse } from '@/components/map/KnockSheet'
 
 interface HouseCardProps {
@@ -131,24 +131,17 @@ export default function HouseCard({
   const [notesDraft, setNotesDraft] = useState<string>('')
   const [editingNotes, setEditingNotes] = useState(false)
   const [savingNotes, setSavingNotes] = useState(false)
-  const [openLead, setOpenLead] = useState<{
-    id: string
-    state: LeadState
-    full_name: string | null
-    phone: string | null
-    email: string | null
-    notes: string | null
-    final_price: number | null
+  const [houseData, setHouseData] = useState<{
+    status: HouseStatus | null
+    contact_name: string | null
+    contact_phone: string | null
+    contact_email: string | null
+    quoted_price: number | null
     anchor_price: number | null
     window_count: number | null
-  } | null>(null)
-  const [customer, setCustomer] = useState<{
-    id: string
-    full_name: string
-    phone: string | null
     lifetime_value: number
     total_jobs: number
-    last_job_at: string | null
+    reclean_due_at: string | null
   } | null>(null)
   const [nextJob, setNextJob] = useState<{
     id: string
@@ -161,43 +154,31 @@ export default function HouseCard({
   useEffect(() => {
     let cancelled = false
     const hydrate = async () => {
-      const [knocksRes, leadsRes, jobsRes, customersRes, houseRes] = await Promise.all([
+      const [knocksRes, jobsRes, houseRes] = await Promise.all([
         supabase.from('knocks').select('id, outcome, note, follow_up_at, created_at').eq('house_id', house.id).order('created_at', { ascending: false }),
-        supabase.from('leads').select('id, state, full_name, phone, email, notes, final_price, anchor_price, window_count, created_at, updated_at').eq('house_id', house.id).order('created_at', { ascending: false }),
         supabase.from('jobs').select('id, scheduled_at, completed_at, status, price, paid_amount, created_at').eq('house_id', house.id).order('scheduled_at', { ascending: false }),
-        supabase.from('customers').select('id, full_name, phone, lifetime_value, total_jobs, last_job_at, created_at').eq('house_id', house.id).limit(1),
-        supabase.from('houses').select('notes').eq('id', house.id).single(),
+        supabase.from('houses').select('status, contact_name, contact_phone, contact_email, quoted_price, anchor_price, window_count, lifetime_value, total_jobs, reclean_due_at, notes').eq('id', house.id).single(),
       ])
 
       if (cancelled) return
 
-      const persistedNotes = (houseRes.data as any)?.notes ?? ''
-      setHouseNotes(persistedNotes)
-      setNotesDraft(persistedNotes)
-
-      // Open lead = newest lead in active states
-      const activeLead = leadsRes.data?.find(l => ['new', 'quoted', 'won'].includes(l.state as string)) ?? null
-      if (activeLead) {
-        setOpenLead({
-          id: activeLead.id,
-          state: activeLead.state as LeadState,
-          full_name: activeLead.full_name,
-          phone: activeLead.phone,
-          email: (activeLead as any).email ?? null,
-          notes: (activeLead as any).notes ?? null,
-          final_price: activeLead.final_price,
-          anchor_price: activeLead.anchor_price,
-          window_count: activeLead.window_count,
+      // House data (contact, pricing, lifetime — all on the house now)
+      const h = houseRes.data as any
+      if (h) {
+        setHouseData({
+          status: h.status,
+          contact_name: h.contact_name,
+          contact_phone: h.contact_phone,
+          contact_email: h.contact_email,
+          quoted_price: h.quoted_price,
+          anchor_price: h.anchor_price,
+          window_count: h.window_count,
+          lifetime_value: h.lifetime_value ?? 0,
+          total_jobs: h.total_jobs ?? 0,
+          reclean_due_at: h.reclean_due_at,
         })
-      }
-
-      if (customersRes.data && customersRes.data.length > 0) {
-        const c = customersRes.data[0]
-        setCustomer({
-          id: c.id, full_name: c.full_name, phone: c.phone,
-          lifetime_value: c.lifetime_value, total_jobs: c.total_jobs,
-          last_job_at: c.last_job_at,
-        })
+        setHouseNotes(h.notes ?? '')
+        setNotesDraft(h.notes ?? '')
       }
 
       // Next scheduled job (status = scheduled, soonest first)
@@ -208,7 +189,7 @@ export default function HouseCard({
         setNextJob({ id: upcoming.id, scheduled_at: upcoming.scheduled_at, price: upcoming.price, status: upcoming.status as JobStatus })
       }
 
-      // Build unified timeline
+      // Build unified timeline (knocks + jobs only — no more leads table)
       const feed: TimelineEvent[] = []
 
       knocksRes.data?.forEach(k => {
@@ -222,27 +203,13 @@ export default function HouseCard({
         })
       })
 
-      leadsRes.data?.forEach(l => {
-        if (l.final_price || l.state === 'won' || l.state === 'lost') {
-          feed.push({
-            id: `l-${l.id}`,
-            kind: 'quote',
-            at: l.updated_at ?? l.created_at,
-            dot: l.state === 'won' ? '#14B714' : l.state === 'lost' ? '#DD1111' : '#A12EDA',
-            title: l.state === 'won' ? 'Won' : l.state === 'lost' ? 'Lost' : 'Quoted',
-            subtitle: [l.full_name, l.phone, (l as any).email, l.window_count ? `${l.window_count} windows` : null].filter(Boolean).join(' · ') || undefined,
-            amount: l.final_price,
-          })
-        }
-      })
-
       jobsRes.data?.forEach(j => {
         feed.push({
           id: `j-${j.id}`,
           kind: 'job',
           at: j.scheduled_at,
           dot: j.status === 'completed' ? '#14B714' : j.status === 'cancelled' ? '#9CA3AF' : '#1ABB85',
-          title: j.status === 'completed' ? 'Job completed' : j.status === 'cancelled' ? 'Job cancelled' : `Job ${j.status.replace('_', ' ')}`,
+          title: j.status === 'completed' ? 'Job completed' : j.status === 'cancelled' ? 'Job cancelled' : `Job ${(j.status as string).replace('_', ' ')}`,
           subtitle: new Date(j.scheduled_at).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
           amount: j.price,
         })
@@ -258,10 +225,10 @@ export default function HouseCard({
 
   // ─── Compute the Money Line ────────────────────────────────────────
   const moneyLine = useMemo(() => {
-    if (customer && customer.lifetime_value > 0) {
+    if (houseData?.status === 'customer' && houseData.lifetime_value > 0) {
       return {
-        big: fmtMoney(customer.lifetime_value),
-        tag: `LTV · ${customer.total_jobs} job${customer.total_jobs !== 1 ? 's' : ''}`,
+        big: fmtMoney(houseData.lifetime_value),
+        tag: `LTV · ${houseData.total_jobs} job${houseData.total_jobs !== 1 ? 's' : ''}`,
         tone: 'text-emerald-600',
       }
     }
@@ -272,30 +239,30 @@ export default function HouseCard({
         tone: 'text-emerald-600',
       }
     }
-    if (openLead?.final_price) {
+    if (houseData?.quoted_price) {
       return {
-        big: fmtMoney(openLead.final_price),
-        tag: openLead.state === 'quoted' ? 'Quote on the table' : 'Potential',
+        big: fmtMoney(houseData.quoted_price),
+        tag: houseData.status === 'quoted' ? 'Quote on the table' : 'Potential',
         tone: 'text-purple-600',
       }
     }
-    if (openLead?.anchor_price) {
+    if (houseData?.anchor_price) {
       return {
-        big: fmtMoney(openLead.anchor_price),
+        big: fmtMoney(houseData.anchor_price),
         tag: 'Anchor price',
         tone: 'text-purple-600',
       }
     }
     return null
-  }, [customer, nextJob, openLead])
+  }, [houseData, nextJob])
 
   // ─── Compute the Next Best Action ──────────────────────────────────
   const nextBestAction = useMemo(() => {
     // Active quote on the table → CLOSE THE DEAL
-    if (openLead?.state === 'quoted') {
+    if (houseData?.status === 'quoted') {
       return {
         label: 'Close the Deal',
-        sub: `Accept ${fmtMoney(openLead.final_price)} quote`,
+        sub: `Accept ${fmtMoney(houseData.quoted_price)} quote`,
         color: 'bg-gradient-to-r from-green-500 to-emerald-600',
         action: () => onOpenQuote('closed_on_spot'),
       }
@@ -311,11 +278,11 @@ export default function HouseCard({
         },
       }
     }
-    // Past customer → ASK FOR REVIEW or OFFER RECLEAN
-    if (customer) {
+    // Past customer → OFFER RECLEAN
+    if (houseData?.status === 'customer') {
       return {
         label: 'Offer Reclean',
-        sub: `Last cleaned ${customer.last_job_at ? timeAgo(customer.last_job_at) + ' ago' : 'recently'}`,
+        sub: houseData.total_jobs > 0 ? `${houseData.total_jobs} job${houseData.total_jobs !== 1 ? 's' : ''} completed` : 'Existing customer',
         color: 'bg-gradient-to-r from-amber-500 to-orange-600',
         action: () => onOpenQuote('closed_on_spot'),
       }
@@ -327,7 +294,7 @@ export default function HouseCard({
         label: 'Knock Now',
         sub: 'You said you\'d be back',
         color: 'bg-gradient-to-r from-lime-500 to-green-600',
-        action: () => onKnock('not_home'), // placeholder — will open outcome grid
+        action: () => onKnock('not_home'),
       }
     }
     // Previously not home → knock again
@@ -340,11 +307,11 @@ export default function HouseCard({
       }
     }
     return null
-  }, [openLead, nextJob, customer, house, onOpenQuote, onKnock])
+  }, [houseData, nextJob, house, onOpenQuote, onKnock])
 
   // ─── Phone for quick actions ───────────────────────────────────────
-  const phone = openLead?.phone ?? customer?.phone ?? null
-  const nameDisplay = openLead?.full_name ?? customer?.full_name ?? null
+  const phone = houseData?.contact_phone ?? null
+  const nameDisplay = houseData?.contact_name ?? null
 
   // ─── Handlers ──────────────────────────────────────────────────────
   const handleSaveNotes = async () => {
@@ -370,28 +337,17 @@ export default function HouseCard({
     setLoading(true)
     const followUpAt = comeBackDate ? new Date(comeBackDate + 'T10:00:00').toISOString() : undefined
 
-    // If name or phone captured, upsert a lead so the contact persists
+    // Save contact info directly on the house (no leads table)
     const name = comeBackName.trim()
     const phoneNum = comeBackPhone.trim()
     const note = comeBackNote.trim()
-    if (name || phoneNum || note) {
-      if (openLead?.id) {
-        await supabase.from('leads').update({
-          full_name: name || openLead.full_name,
-          phone: phoneNum || openLead.phone,
-          notes: note ? (openLead.notes ? `${openLead.notes}\n\n${note}` : note) : openLead.notes,
-          next_touch_at: followUpAt ?? null,
-        }).eq('id', openLead.id)
-      } else {
-        await supabase.from('leads').insert({
-          house_id: house.id,
-          full_name: name || null,
-          phone: phoneNum || null,
-          notes: note || null,
-          state: 'nurture',
-          next_touch_at: followUpAt ?? null,
-        })
-      }
+    const updates: Record<string, any> = {}
+    if (name) updates.contact_name = name
+    if (phoneNum) updates.contact_phone = phoneNum
+    if (note) updates.notes = houseNotes ? `${houseNotes}\n\n${note}` : note
+
+    if (Object.keys(updates).length > 0) {
+      await supabase.from('houses').update(updates).eq('id', house.id)
     }
 
     await onKnock('come_back', followUpAt)
@@ -422,9 +378,9 @@ export default function HouseCard({
               {nameDisplay && (
                 <p className="text-sm text-gray-500 mt-0.5">{nameDisplay}{phone ? ` · ${phone}` : ''}</p>
               )}
-              {openLead?.email && (
-                <a href={`mailto:${openLead.email}`} className="text-sm text-blue-600 mt-0.5 block truncate active:text-blue-800">
-                  {openLead.email}
+              {houseData?.contact_email && (
+                <a href={`mailto:${houseData.contact_email}`} className="text-sm text-blue-600 mt-0.5 block truncate active:text-blue-800">
+                  {houseData.contact_email}
                 </a>
               )}
             </div>

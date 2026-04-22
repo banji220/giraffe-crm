@@ -39,8 +39,8 @@ function MeInner() {
     const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
     Promise.all([
       supabase.from('knocks').select('id', { count: 'exact', head: true }).gte('created_at', startOfDay.toISOString()),
-      supabase.from('leads').select('id', { count: 'exact', head: true }).gte('created_at', startOfDay.toISOString()).not('final_price', 'is', null),
-      supabase.from('leads').select('id', { count: 'exact', head: true }).gte('updated_at', startOfDay.toISOString()).eq('state', 'won'),
+      supabase.from('houses').select('id', { count: 'exact', head: true }).eq('status', 'quoted').gte('updated_at', startOfDay.toISOString()),
+      supabase.from('houses').select('id', { count: 'exact', head: true }).eq('status', 'customer').gte('updated_at', startOfDay.toISOString()),
     ]).then(([k, q, c]) => setStats({ knocksToday: k.count ?? 0, quotesToday: q.count ?? 0, closedToday: c.count ?? 0 }))
 
     supabase.from('allowed_phones').select('phone, label').order('created_at', { ascending: true }).then(({ data }) => {

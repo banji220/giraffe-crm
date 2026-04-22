@@ -112,15 +112,18 @@ export default function BottomNav() {
       const endOfToday = new Date(now); endOfToday.setHours(23, 59, 59, 999)
 
       const [followupsRes, unsignedRes, recleanRes] = await Promise.all([
-        // Follow-ups or scheduled touches due today
-        supabase.from('leads').select('id', { count: 'exact', head: true })
-          .lte('next_touch_at', endOfToday.toISOString())
-          .in('state', ['nurture', 'new']),
+        // Follow-ups due today (lead houses with next_follow_up_at)
+        supabase.from('houses').select('id', { count: 'exact', head: true })
+          .eq('status', 'lead')
+          .not('next_follow_up_at', 'is', null)
+          .lte('next_follow_up_at', endOfToday.toISOString()),
         // Unsigned quotes (deals in motion)
-        supabase.from('leads').select('id', { count: 'exact', head: true })
-          .eq('state', 'quoted'),
+        supabase.from('houses').select('id', { count: 'exact', head: true })
+          .eq('status', 'quoted'),
         // Customers due for reclean
-        supabase.from('customers').select('id', { count: 'exact', head: true })
+        supabase.from('houses').select('id', { count: 'exact', head: true })
+          .eq('status', 'customer')
+          .not('reclean_due_at', 'is', null)
           .lte('reclean_due_at', endOfToday.toISOString()),
       ])
 

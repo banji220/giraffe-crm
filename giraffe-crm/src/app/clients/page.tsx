@@ -24,7 +24,7 @@ function ClientsInner() {
   const [count, setCount] = useState<number>(0)
 
   useEffect(() => {
-    supabase.from('customers').select('lifetime_value').then(({ data }) => {
+    supabase.from('houses').select('lifetime_value').eq('status', 'customer').then(({ data }) => {
       const total = (data ?? []).reduce((s, r: any) => s + (r.lifetime_value || 0), 0)
       setLtv(total)
       setCount(data?.length ?? 0)
