@@ -6,7 +6,7 @@ import { reverseGeocode } from '@/lib/geo'
 import HouseCard from '@/components/map/HouseCard'
 import { type SheetHouse } from '@/components/map/KnockSheet'
 import SessionChip from '@/components/auth/SessionChip'
-import QuoteForm, { type QuoteData } from '@/components/quote/QuoteForm'
+import CaptureFlow, { type CaptureData } from '@/components/capture/CaptureFlow'
 import type { KnockOutcome, HouseStatus } from '@/types/database'
 
 // Pin colors keyed by LAST KNOCK OUTCOME — each disposition gets its own color.
@@ -545,7 +545,7 @@ export default function MapView() {
   }
 
   // ─── Submit quote form ─────────────────────────────────────────────
-  const handleQuoteSubmit = async (data: QuoteData) => {
+  const handleCaptureSubmit = async (data: CaptureData) => {
     if (!selectedHouse) return
 
     // 1. Record the knock (trigger auto-updates house status)
@@ -561,18 +561,18 @@ export default function MapView() {
       return
     }
 
-    // 2. Update house with contact + pricing info (no leads table anymore)
+    // 2. Update house with contact + pricing info
     await supabase.current
       .from('houses')
       .update({
-        contact_name: data.fullName || null,
-        contact_phone: data.phone || null,
-        contact_email: data.email || null,
+        contact_name: data.contactName || null,
+        contact_phone: data.contactPhone || null,
+        contact_email: data.contactEmail || null,
         notes: data.notes || null,
         window_count: data.windowCount,
         service_types: data.serviceTypes,
         anchor_price: data.anchorPrice,
-        quoted_price: data.finalPrice,
+        quoted_price: data.quotedPrice,
       })
       .eq('id', selectedHouse.id)
 
@@ -581,7 +581,7 @@ export default function MapView() {
       await supabase.current.from('jobs').insert({
         house_id: selectedHouse.id,
         scheduled_at: data.scheduledAt,
-        price: data.finalPrice,
+        price: data.quotedPrice,
         service_types: data.serviceTypes,
         window_count: data.windowCount,
         assigned_to: OWNER_ID,
@@ -669,12 +669,12 @@ export default function MapView() {
         />
       )}
 
-      {/* Quote form */}
+      {/* Capture flow (multi-step cards) */}
       {selectedHouse && quoteOutcome && (
-        <QuoteForm
+        <CaptureFlow
           outcome={quoteOutcome}
           address={selectedHouse.fullAddress}
-          onSubmit={handleQuoteSubmit}
+          onSubmit={handleCaptureSubmit}
           onClose={() => setQuoteOutcome(null)}
         />
       )}
