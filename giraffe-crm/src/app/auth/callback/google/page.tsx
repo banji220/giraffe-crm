@@ -8,11 +8,23 @@
  * to exchange for tokens, then redirects back to the Me page.
  */
 
-import { useEffect, useState } from 'react'
+import { Suspense, useEffect, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function GoogleCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <div className="text-sm font-mono font-bold uppercase tracking-wider">Loading...</div>
+      </div>
+    }>
+      <GoogleCallbackInner />
+    </Suspense>
+  )
+}
+
+function GoogleCallbackInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [status, setStatus] = useState<'processing' | 'success' | 'error'>('processing')
