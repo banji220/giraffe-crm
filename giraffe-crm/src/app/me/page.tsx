@@ -2,16 +2,22 @@
 
 /**
  * /me — the operator cockpit.
- * Signed-in phone, today's stats, invite someone, sign out.
+ * Profile header, Quick Log, Daily Mission, Weekly Goal,
+ * Contribution Heatmap + Streak, Invite system, Sign out.
  */
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AuthGate from '@/components/auth/AuthGate'
 import BottomNav from '@/components/nav/BottomNav'
+import QuickLog from '@/components/knock-tracker/QuickLog'
+import DailyMission from '@/components/knock-tracker/DailyMission'
+import WeeklyGoal from '@/components/knock-tracker/WeeklyGoal'
+import ContributionHeatmap from '@/components/knock-tracker/ContributionHeatmap'
 import { createClient } from '@/lib/supabase/client'
 import { formatE164ForDisplay, toE164, formatAsYouType, last4 } from '@/lib/phone'
 import { clearSessionBeacon } from '@/lib/sessionCookie'
+import type { DailyStats, UserSettings } from '@/types/database'
 
 export default function MePage() {
   return (
@@ -24,9 +30,25 @@ export default function MePage() {
 function MeInner() {
   const router = useRouter()
   const supabase = useRef(createClient()).current
+  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), [])
 
+  // Profile
   const [phone, setPhone] = useState('')
-  const [stats, setStats] = useState({ knocksToday: 0, quotesToday: 0, closedToday: 0 })
+
+  // Knock tracker
+  const [doorsToday, setDoorsToday] = useState(0)
+  const [dailyTarget, setDailyTarget] = useState(30)
+  const [weeklyTarget, setWeeklyTarget] = useState(150)
+  const [doorsThisWeek, setDoorsThisWeek] = useState(0)
+
+  // Heatmap data
+  const [heatmapData, setHeatmapData] = useState<{
+    date: string; doors: number; conversations: number; leads: number; wins: number
+  }[]>([])
+  const [streak, setStreak] = useState(0)
+  const [bestStreak, setBestStreak] = useState(0)
+
+  // Invite system
   const [invites, setInvites] = useState<{ phone: string; label: string | null }[]>([])
   const [invName, setInvName] = useState('')
   const [invPhone, setInvPhone] = useState('')
@@ -36,19 +58,98 @@ function MeInner() {
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setPhone(data.session?.user?.phone || ''))
 
-    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0)
+    // Get weekly date range (Mon-Sun)
+    const now = new Date()
+    const dayOfWeek = now.getDay()
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1
+    const monday = new Date(now)
+    monday.setDate(now.getDate() - mondayOffset)
+    monday.setHours(0, 0, 0, 0)
+    const mondayKey = monday.toISOString().slice(0, 10)
+
+    // Get heatmap range (last 365 days)
+    const yearAgo = new Date(now)
+    yearAgo.setDate(yearAgo.getDate() - 365)
+    const yearAgoKey = yearAgo.toISOString().slice(0, 10)
+
     Promise.all([
-      supabase.from('knocks').select('id', { count: 'exact', head: true }).gte('created_at', startOfDay.toISOString()),
-      supabase.from('houses').select('id', { count: 'exact', head: true }).eq('status', 'quoted').gte('updated_at', startOfDay.toISOString()),
-      supabase.from('houses').select('id', { count: 'exact', head: true }).eq('status', 'customer').gte('updated_at', startOfDay.toISOString()),
-    ]).then(([k, q, c]) => setStats({ knocksToday: k.count ?? 0, quotesToday: q.count ?? 0, closedToday: c.count ?? 0 }))
+      // Today's stats
+      supabase.from('daily_stats' as any).select('*').eq('date', todayKey).maybeSingle() as Promise<{ data: DailyStats | null; error: any }>,
+      // Settings
+      supabase.from('user_settings' as any).select('*').maybeSingle() as Promise<{ data: UserSettings | null; error: any }>,
+      // This week's stats (for weekly goal)
+      supabase.from('daily_stats' as any).select('date, doors').gte('date', mondayKey).order('date') as Promise<{ data: { date: string; doors: number }[] | null; error: any }>,
+      // Heatmap data (last year)
+      supabase.from('daily_stats' as any).select('date, doors, conversations, leads, wins').gte('date', yearAgoKey).order('date') as Promise<{ data: { date: string; doors: number; conversations: number; leads: number; wins: number }[] | null; error: any }>,
+      // Invites
+      supabase.from('allowed_phones').select('phone, label').order('created_at', { ascending: true }),
+    ]).then(([statsRes, settingsRes, weekRes, heatmapRes, invRes]) => {
+      startTransition(() => {
+        // Today
+        if (statsRes.data) setDoorsToday(statsRes.data.doors ?? 0)
 
-    supabase.from('allowed_phones').select('phone, label').order('created_at', { ascending: true }).then(({ data }) => {
-      if (data) setInvites(data as any)
+        // Settings
+        if (settingsRes.data) {
+          setDailyTarget(settingsRes.data.daily_target ?? 30)
+          setWeeklyTarget(settingsRes.data.weekly_target ?? 150)
+        }
+
+        // Weekly total
+        const weekData = weekRes.data ?? []
+        setDoorsThisWeek(weekData.reduce((sum, d) => sum + (d.doors ?? 0), 0))
+
+        // Heatmap
+        const hmData = heatmapRes.data ?? []
+        setHeatmapData(hmData.map(d => ({
+          date: d.date,
+          doors: d.doors ?? 0,
+          conversations: d.conversations ?? 0,
+          leads: d.leads ?? 0,
+          wins: d.wins ?? 0,
+        })))
+
+        // Calculate streak
+        const { current, best } = calcStreak(hmData)
+        setStreak(current)
+        setBestStreak(best)
+
+        // Invites
+        if (invRes.data) setInvites(invRes.data as any)
+      })
     })
-  }, [supabase])
+  }, [supabase, todayKey])
 
-  const closeRate = stats.knocksToday > 0 ? Math.round((stats.closedToday / stats.knocksToday) * 100) : 0
+  // Log doors handler (same logic as Today page)
+  const handleLog = useCallback(async (count: number) => {
+    setDoorsToday(prev => prev + count)
+    setDoorsThisWeek(prev => prev + count)
+
+    // Update heatmap data optimistically
+    setHeatmapData(prev => {
+      const existing = prev.find(d => d.date === todayKey)
+      if (existing) {
+        return prev.map(d => d.date === todayKey ? { ...d, doors: d.doors + count } : d)
+      }
+      return [...prev, { date: todayKey, doors: count, conversations: 0, leads: 0, wins: 0 }]
+    })
+
+    const { data: existing } = await (supabase.from('daily_stats' as any)
+      .select('*')
+      .eq('date', todayKey)
+      .maybeSingle() as Promise<{ data: DailyStats | null; error: any }>)
+
+    if (existing) {
+      await (supabase.from('daily_stats' as any) as any)
+        .update({ doors: existing.doors + count })
+        .eq('id', existing.id)
+    } else {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) {
+        await (supabase.from('daily_stats' as any) as any)
+          .insert({ user_id: user.id, date: todayKey, doors: count })
+      }
+    }
+  }, [supabase, todayKey])
 
   const signOut = async () => {
     await supabase.auth.signOut()
@@ -75,73 +176,104 @@ function MeInner() {
   }
 
   return (
-    <div className="min-h-screen flex flex-col bg-[#FAF7F2]">
-      <div className="px-4 pt-8 pb-4">
-        <div className="text-xs uppercase tracking-[0.2em] font-bold text-gray-700">You</div>
-        <div className="flex items-center gap-3 mt-2">
-          <div className="w-14 h-14 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 text-black flex items-center justify-center font-black text-lg shadow-[0_4px_0_0_rgba(0,0,0,1)] border-[3px] border-black">
-            {last4(phone) || '··'}
+    <div className="min-h-screen flex flex-col bg-background">
+      {/* ── Profile Header ─────────────────────────────────────────── */}
+      <header className="px-4 pt-6 pb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-14 h-14 bg-foreground text-background flex items-center justify-center border-2 border-foreground">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square">
+              <path d="M7 3 L7 7" /><path d="M17 3 L17 7" />
+              <rect x="4" y="5" width="16" height="16" />
+              <circle cx="9" cy="13" r="1.5" fill="currentColor" stroke="none" />
+              <circle cx="15" cy="13" r="1.5" fill="currentColor" stroke="none" />
+              <path d="M9 17 L15 17" />
+            </svg>
           </div>
           <div className="flex-1 min-w-0">
-            <div className="text-lg font-black text-gray-900">{formatE164ForDisplay(phone)}</div>
-            <div className="text-xs text-gray-500">Owner</div>
+            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground">Me</div>
+            <div className="text-xl font-bold tracking-tight">Holy Giraffe</div>
+            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Window Cleaning Pro</div>
           </div>
-          <button onClick={signOut} className="px-3 py-2 text-xs font-bold text-gray-600 border-[2px] border-black/20 rounded-lg active:bg-gray-100">
+          <button
+            onClick={signOut}
+            className="px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground border-2 border-foreground active:translate-y-[2px] transition-transform"
+          >
             Sign out
           </button>
         </div>
-      </div>
+      </header>
 
-      <main className="flex-1 px-4 pt-2 pb-4">
-        {/* Today's stats */}
-        <section className="mb-5">
-          <h2 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-2">Today</h2>
-          <div className="grid grid-cols-3 gap-2">
-            <Stat big={stats.knocksToday} label="Knocks" color="#FF6B5B" />
-            <Stat big={stats.quotesToday} label="Quotes" color="#FFD93D" />
-            <Stat big={stats.closedToday} label="Closed" color="#14B714" />
-          </div>
-          <div className="mt-2 text-center text-xs text-gray-500">
-            Close rate: <span className="font-bold text-gray-900">{closeRate}%</span>
-          </div>
-        </section>
+      {/* ── Main Content ───────────────────────────────────────────── */}
+      <main className="flex-1 pb-24 space-y-4 px-4">
+        {/* Quick Log */}
+        <QuickLogInline onLog={handleLog} todayDoors={doorsToday} />
+
+        {/* Daily Mission */}
+        <DailyMissionInline doorsToday={doorsToday} target={dailyTarget} />
+
+        {/* Weekly Goal */}
+        <WeeklyGoal doorsThisWeek={doorsThisWeek} weeklyTarget={weeklyTarget} />
+
+        {/* Contribution Heatmap */}
+        <ContributionHeatmap data={heatmapData} streak={streak} bestStreak={bestStreak} />
 
         {/* Invite card */}
-        <section className="mb-5">
-          <h2 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-2">Invite someone</h2>
-          <div className="bg-white border-[3px] border-black rounded-2xl p-4 shadow-[0_6px_0_0_rgba(0,0,0,1)]">
-            <input type="text" value={invName} onChange={(e) => setInvName(e.target.value)} placeholder="Name (optional)" autoCapitalize="words"
-              className="w-full border-[2px] border-black/15 rounded-lg px-3 py-2.5 text-base mb-2 outline-none focus:border-emerald-500" />
-            <input type="tel" inputMode="tel" value={invPhone} onChange={(e) => setInvPhone(formatAsYouType(e.target.value))} placeholder="(714) 555-1234"
-              className="w-full border-[2px] border-black/15 rounded-lg px-3 py-2.5 text-base mb-3 outline-none focus:border-emerald-500" />
-            <button onClick={sendInvite} disabled={sending}
-              className="w-full bg-emerald-500 text-black font-black py-3 rounded-xl border-[2px] border-black active:translate-y-[2px] active:shadow-none shadow-[0_4px_0_0_rgba(0,0,0,1)] disabled:opacity-50">
-              {sending ? 'Adding…' : '📱 Send invite text'}
-            </button>
-          </div>
-        </section>
+        <div className="border-2 border-foreground bg-card p-4">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">Invite someone</h2>
+          <input
+            type="text"
+            value={invName}
+            onChange={(e) => setInvName(e.target.value)}
+            placeholder="Name (optional)"
+            autoCapitalize="words"
+            className="field-input mb-2"
+          />
+          <input
+            type="tel"
+            inputMode="tel"
+            value={invPhone}
+            onChange={(e) => setInvPhone(formatAsYouType(e.target.value))}
+            placeholder="(714) 555-1234"
+            className="field-input mb-3"
+          />
+          <button
+            onClick={sendInvite}
+            disabled={sending}
+            className="w-full bg-foreground text-background font-mono font-bold text-sm uppercase tracking-wider py-3 border-2 border-foreground active:translate-y-[2px] transition-transform disabled:opacity-50"
+          >
+            {sending ? 'Adding…' : 'Send invite text'}
+          </button>
+        </div>
 
         {/* Allowlist */}
-        <section className="mb-5">
-          <h2 className="text-xs uppercase tracking-widest text-gray-500 font-bold mb-2">Who has access ({invites.length})</h2>
-          <div className="bg-white border border-black/10 rounded-2xl divide-y divide-gray-100">
+        <div className="border-2 border-foreground bg-card p-4">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-3">
+            Who has access ({invites.length})
+          </h2>
+          <div className="space-y-0">
             {invites.map((row) => (
-              <div key={row.phone} className="flex items-center gap-3 px-3 py-3">
-                <div className="w-8 h-8 rounded-full bg-gray-100 text-gray-600 flex items-center justify-center text-[10px] font-bold">{last4(row.phone)}</div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-gray-900 truncate">{row.label || 'Unnamed'}</div>
-                  <div className="text-xs text-gray-500">{formatE164ForDisplay(row.phone)}</div>
+              <div key={row.phone} className="flex items-center gap-3 py-2 border-b border-foreground/10 last:border-0">
+                <div className="w-8 h-8 bg-muted text-foreground flex items-center justify-center text-[10px] font-mono font-bold">
+                  {last4(row.phone)}
                 </div>
-                {row.phone === phone && <div className="text-[10px] font-bold text-emerald-600 uppercase tracking-wider">You</div>}
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-bold truncate">{row.label || 'Unnamed'}</div>
+                  <div className="text-[10px] font-mono text-muted-foreground">{formatE164ForDisplay(row.phone)}</div>
+                </div>
+                {row.phone === phone && (
+                  <span className="text-[10px] font-mono font-bold text-primary uppercase tracking-wider">You</span>
+                )}
               </div>
             ))}
-            {invites.length === 0 && <div className="p-4 text-sm text-gray-400 italic">No one invited yet.</div>}
+            {invites.length === 0 && (
+              <div className="py-4 text-sm font-mono text-muted-foreground text-center">No one invited yet.</div>
+            )}
           </div>
-        </section>
+        </div>
       </main>
 
       {toast && (
-        <div className="fixed bottom-28 left-1/2 -translate-x-1/2 bg-black text-white px-4 py-2 rounded-full text-sm shadow-xl z-50">
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 bg-foreground text-background px-4 py-2 text-sm font-mono font-bold z-50 border-2 border-foreground">
           {toast}
         </div>
       )}
@@ -151,11 +283,74 @@ function MeInner() {
   )
 }
 
-function Stat({ big, label, color }: { big: number; label: string; color: string }) {
+/**
+ * Inline wrappers — QuickLog and DailyMission components use their own
+ * full-width padding. On the Me page we want them inside the px-4 flow,
+ * so we wrap them and override their outer padding.
+ */
+function QuickLogInline({ onLog, todayDoors }: { onLog: (n: number) => void; todayDoors: number }) {
   return (
-    <div className="bg-white border-[2px] border-black rounded-2xl p-3 text-center shadow-[0_4px_0_0_rgba(0,0,0,1)]">
-      <div className="text-3xl font-black tabular-nums" style={{ color }}>{big}</div>
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 font-bold mt-1">{label}</div>
+    <div className="[&>section]:px-0 [&>section>div]:max-w-none">
+      <QuickLog onLog={onLog} todayDoors={todayDoors} />
     </div>
   )
+}
+
+function DailyMissionInline({ doorsToday, target }: { doorsToday: number; target: number }) {
+  return (
+    <div className="[&>section]:px-0 [&>section>div]:max-w-none">
+      <DailyMission doorsToday={doorsToday} target={target} />
+    </div>
+  )
+}
+
+/**
+ * Calculate current streak and best streak from daily stats.
+ * A "streak day" = any day with doors > 0.
+ */
+function calcStreak(data: { date: string; doors: number }[]): { current: number; best: number } {
+  if (data.length === 0) return { current: 0, best: 0 }
+
+  // Build a set of dates with activity
+  const activeDays = new Set(data.filter(d => (d.doors ?? 0) > 0).map(d => d.date))
+
+  // Walk backwards from today
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  let current = 0
+  const cursor = new Date(today)
+
+  // Check today first — if no activity yet, start from yesterday
+  const todayKey = cursor.toISOString().slice(0, 10)
+  if (!activeDays.has(todayKey)) {
+    cursor.setDate(cursor.getDate() - 1)
+  }
+
+  while (true) {
+    const key = cursor.toISOString().slice(0, 10)
+    if (activeDays.has(key)) {
+      current++
+      cursor.setDate(cursor.getDate() - 1)
+    } else {
+      break
+    }
+  }
+
+  // Best streak: scan all dates chronologically
+  let best = 0
+  let run = 0
+  const sorted = [...activeDays].sort()
+  for (let i = 0; i < sorted.length; i++) {
+    if (i === 0) {
+      run = 1
+    } else {
+      const prev = new Date(sorted[i - 1] + 'T00:00:00')
+      const curr = new Date(sorted[i] + 'T00:00:00')
+      const diff = (curr.getTime() - prev.getTime()) / 86400000
+      run = diff === 1 ? run + 1 : 1
+    }
+    if (run > best) best = run
+  }
+
+  return { current, best }
 }
