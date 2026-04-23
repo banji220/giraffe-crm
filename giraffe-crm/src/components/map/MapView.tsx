@@ -7,6 +7,7 @@ import HouseCard from '@/components/map/HouseCard'
 import { type SheetHouse } from '@/components/map/KnockSheet'
 import SessionChip from '@/components/auth/SessionChip'
 import CaptureFlow, { type CaptureData } from '@/components/capture/CaptureFlow'
+import { createCalendarEvent } from '@/lib/google-calendar'
 import type { KnockOutcome, HouseStatus } from '@/types/database'
 
 // Pin colors keyed by LAST KNOCK OUTCOME — each disposition gets its own color.
@@ -586,6 +587,19 @@ export default function MapView() {
         window_count: data.windowCount,
         assigned_to: OWNER_ID,
       })
+    }
+
+    // 4. Push to Google Calendar (non-blocking — won't break the flow if it fails)
+    if (data.scheduledAt) {
+      createCalendarEvent({
+        houseId: selectedHouse.id,
+        contactName: data.contactName,
+        phone: data.contactPhone,
+        address: selectedHouse.address,
+        price: data.quotedPrice,
+        date: data.scheduledAt,
+        type: data.outcome === 'closed_on_spot' ? 'job' : 'follow_up',
+      }).catch(err => console.error('Calendar sync failed:', err))
     }
 
     setQuoteOutcome(null)
