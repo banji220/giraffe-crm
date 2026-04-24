@@ -10,15 +10,13 @@
  * oklch tokens, zero border-radius.
  */
 
-import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from 'react'
+import { useEffect, useRef, useState, useMemo, startTransition } from 'react'
 import Link from 'next/link'
 import AuthGate from '@/components/auth/AuthGate'
 import BottomNav from '@/components/nav/BottomNav'
-import QuickLog from '@/components/knock-tracker/QuickLog'
-import DailyMission from '@/components/knock-tracker/DailyMission'
 import { createClient } from '@/lib/supabase/client'
 import { formatE164ForDisplay } from '@/lib/phone'
-import type { DailyStats, UserSettings, HouseStatus } from '@/types/database'
+import type { HouseStatus } from '@/types/database'
 
 /** Lightweight row shape for CRM cards — queried directly from houses */
 type HouseRow = {
@@ -55,10 +53,6 @@ function TodayInner() {
   const supabase = useRef(createClient()).current
   const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), [])
 
-  // ── Knock tracker state ──────────────────────────────────────────────
-  const [doorsToday, setDoorsToday] = useState(0)
-  const [dailyTarget, setDailyTarget] = useState(30)
-
   // ── CRM state ────────────────────────────────────────────────────────
   const [appts, setAppts] = useState<HouseRow[]>([])
   const [jobs, setJobs] = useState<JobRow[]>([])
@@ -75,10 +69,6 @@ function TodayInner() {
     const houseCols = 'id, full_address, status, contact_name, contact_phone, quoted_price, anchor_price, next_follow_up_at, updated_at, created_at'
 
     Promise.all([
-      // Knock tracker data
-      supabase.from('daily_stats' as any).select('*').eq('date', todayKey).maybeSingle() as Promise<{ data: DailyStats | null; error: any }>,
-      supabase.from('user_settings' as any).select('*').maybeSingle() as Promise<{ data: UserSettings | null; error: any }>,
-
       // Appointments today: quoted houses with follow-up today
       supabase.from('houses').select(houseCols)
         .eq('status', 'quoted')
@@ -108,7 +98,7 @@ function TodayInner() {
         .lte('updated_at', fiveDaysAgo.toISOString())
         .order('updated_at', { ascending: true })
         .limit(25),
-    ]).then(async ([statsRes, settingsRes, a, j, f, e]) => {
+    ]).then(async ([a, j, f, e]) => {
       const apptsRaw    = (a.data as HouseRow[]) ?? []
       const jobsRaw     = (j.data as JobRow[])   ?? []
       const followRaw   = (f.data as HouseRow[]) ?? []
@@ -129,11 +119,6 @@ function TodayInner() {
       }
 
       startTransition(() => {
-        // Knock tracker
-        if (statsRes.data) setDoorsToday(statsRes.data.doors ?? 0)
-        if (settingsRes.data) setDailyTarget(settingsRes.data.daily_target ?? 30)
-
-        // CRM
         setAppts(apptsRaw)
         setJobs(jobsRaw)
         setFollowUps(followRaw)
@@ -143,43 +128,15 @@ function TodayInner() {
     })
   }, [supabase, todayKey])
 
-  // ── Log doors handler ────────────────────────────────────────────────
-  const handleLog = useCallback(async (count: number) => {
-    setDoorsToday(prev => prev + count)
-
-    const { data: existing } = await (supabase.from('daily_stats' as any)
-      .select('*')
-      .eq('date', todayKey)
-      .maybeSingle() as Promise<{ data: DailyStats | null; error: any }>)
-
-    if (existing) {
-      await (supabase.from('daily_stats' as any) as any)
-        .update({ doors: existing.doors + count })
-        .eq('id', existing.id)
-    } else {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
-        await (supabase.from('daily_stats' as any) as any)
-          .insert({ user_id: user.id, date: todayKey, doors: count })
-      }
-    }
-  }, [supabase, todayKey])
-
   const total = appts.length + jobs.length + followUps.length + expiring.length
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header total={total} doorsToday={doorsToday} />
+      <Header total={total} />
 
-      <main className="flex-1 pb-4">
-        {/* ── Knock tracker ──────────────────────────────────────── */}
-        <div className="space-y-4 pt-4">
-          <QuickLog onLog={handleLog} todayDoors={doorsToday} />
-          <DailyMission doorsToday={doorsToday} target={dailyTarget} />
-        </div>
-
+      <main className="flex-1 pb-24">
         {/* ── CRM sections ───────────────────────────────────────── */}
-        <div className="px-4 sm:px-10 pt-6">
+        <div className="px-4 sm:px-10 pt-4">
           <div className="mx-auto max-w-5xl space-y-5">
             <HouseSection title="Appointments today" rows={appts} urgency />
             <JobSection   title="Jobs today"          rows={jobs} />
@@ -206,25 +163,23 @@ function TodayInner() {
 }
 
 /* ─── Header ───────────────────────────────────────────────────────────── */
-function Header({ total, doorsToday }: { total: number; doorsToday: number }) {
+function Header({ total }: { total: number }) {
   const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
   return (
     <header className="border-b-4 border-foreground px-4 pt-6 pb-4 sm:px-10">
       <div className="mx-auto max-w-5xl">
-        <p className="text-[10px] sm:text-xs font-mono font-bold uppercase tracking-[0.3em] text-primary">Today</p>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight mt-1">{today}</h1>
-        <div className="flex items-center gap-4 mt-1.5">
-          {doorsToday > 0 && (
-            <span className="text-xs font-mono text-muted-foreground">
-              <span className="font-bold text-foreground">{doorsToday}</span> doors knocked
-            </span>
-          )}
-          {total > 0 && (
+        <div className="flex items-center gap-2 mb-1">
+          <img src="/logo-dark.png" alt="" className="w-6 h-6 object-contain" draggable={false} />
+          <p className="text-[10px] sm:text-xs font-mono font-bold uppercase tracking-[0.3em] text-primary">Giraffe CRM</p>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{today}</h1>
+        {total > 0 && (
+          <div className="mt-1.5">
             <span className="text-xs font-mono text-muted-foreground">
               <span className="font-bold text-foreground">{total}</span> action{total === 1 ? '' : 's'} pending
             </span>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </header>
   )

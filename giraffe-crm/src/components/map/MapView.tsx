@@ -595,7 +595,7 @@ export default function MapView() {
         houseId: selectedHouse.id,
         contactName: data.contactName,
         phone: data.contactPhone,
-        address: selectedHouse.address,
+        address: selectedHouse.fullAddress,
         price: data.quotedPrice,
         date: data.scheduledAt,
         type: data.outcome === 'closed_on_spot' ? 'job' : 'follow_up',

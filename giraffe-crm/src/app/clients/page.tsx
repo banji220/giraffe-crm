@@ -82,8 +82,11 @@ function ClientsInner() {
     <div className="min-h-screen flex flex-col bg-background">
       {/* Header */}
       <header className="border-b-4 border-foreground px-4 pt-6 pb-4">
-        <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-muted-foreground">Clients</p>
-        <h1 className="text-2xl font-bold tracking-tight mt-1">Customer Base</h1>
+        <div className="flex items-center gap-2 mb-1">
+          <img src="/logo-dark.png" alt="" className="w-6 h-6 object-contain" draggable={false} />
+          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-muted-foreground">Clients</p>
+        </div>
+        <h1 className="text-2xl font-bold tracking-tight">Customer Base</h1>
       </header>
 
       <main className="flex-1 px-4 pb-24 pt-4 space-y-4">

@@ -20,6 +20,7 @@ import BadgesPanel, { type BadgeStats } from '@/components/knock-tracker/BadgesP
 import { buildDayRecords, computeStreaks, type DayRecord } from '@/lib/activity-data'
 import { createClient } from '@/lib/supabase/client'
 import { clearSessionBeacon } from '@/lib/sessionCookie'
+import { connectGoogleCalendar, isCalendarConnected } from '@/lib/google-calendar'
 import type { DailyStats, UserSettings } from '@/types/database'
 
 export default function MePage() {
@@ -69,6 +70,8 @@ function MeInner() {
   const [totalCloses, setTotalCloses] = useState(0)
 
   const [toast, setToast] = useState<string | null>(null)
+  const [calConnected, setCalConnected] = useState<boolean | null>(null)
+  const [calConnecting, setCalConnecting] = useState(false)
 
   useEffect(() => {
     // Get weekly date range (Sun-Sat)
@@ -95,7 +98,9 @@ function MeInner() {
       supabase.from('daily_stats' as any).select('date, doors, conversations, leads, appointments, wins').gte('date', yearAgoKey).order('date') as unknown as Promise<{ data: { date: string; doors: number; conversations: number; leads: number; appointments: number; wins: number }[] | null; error: any }>,
       // Total closes for badges
       supabase.from('houses').select('id', { count: 'exact', head: true }).eq('status', 'customer'),
-    ]).then(([statsRes, settingsRes, weekRes, heatmapRes, closesRes]) => {
+      // Google Calendar connection status
+      isCalendarConnected().catch(() => false),
+    ]).then(([statsRes, settingsRes, weekRes, heatmapRes, closesRes, calStatus]) => {
       startTransition(() => {
         if (statsRes.data) setDoorsToday(statsRes.data.doors ?? 0)
 
@@ -111,6 +116,7 @@ function MeInner() {
         setRawStats(hmData)
 
         setTotalCloses(closesRes.count ?? 0)
+        setCalConnected(calStatus as boolean)
       })
     })
   }, [supabase, todayKey])
@@ -179,6 +185,18 @@ function MeInner() {
       .upsert({ user_id: user.id, weekly_target: target }, { onConflict: 'user_id' })
   }, [supabase])
 
+  const handleConnectCalendar = useCallback(async () => {
+    setCalConnecting(true)
+    try {
+      await connectGoogleCalendar()
+      // User will be redirected to Google — page unloads
+    } catch (err: any) {
+      setCalConnecting(false)
+      setToast(err.message || 'Failed to connect calendar')
+      setTimeout(() => setToast(null), 3000)
+    }
+  }, [])
+
   const signOut = async () => {
     await supabase.auth.signOut()
     clearSessionBeacon()
@@ -192,18 +210,10 @@ function MeInner() {
       {/* ── Profile Header ─────────────────────────────────────────── */}
       <header className="px-4 pt-6 pb-4">
         <div className="flex items-center gap-3">
-          <div className="w-14 h-14 bg-foreground text-background flex items-center justify-center border-2 border-foreground">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="square">
-              <path d="M7 3 L7 7" /><path d="M17 3 L17 7" />
-              <rect x="4" y="5" width="16" height="16" />
-              <circle cx="9" cy="13" r="1.5" fill="currentColor" stroke="none" />
-              <circle cx="15" cy="13" r="1.5" fill="currentColor" stroke="none" />
-              <path d="M9 17 L15 17" />
-            </svg>
-          </div>
+          <img src="/logo-dark.png" alt="Giraffe CRM" className="w-12 h-12 object-contain" draggable={false} />
           <div className="flex-1 min-w-0">
             <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground">Me</div>
-            <div className="text-xl font-bold tracking-tight">Holy Giraffe</div>
+            <div className="text-xl font-bold tracking-tight">Giraffe CRM</div>
             <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Window Cleaning Pro</div>
           </div>
           <button
@@ -258,6 +268,40 @@ function MeInner() {
         <MomentumMeter data={dayRecords} />
 
         <BadgesPanel stats={badgeStats} />
+
+        {/* ── Integrations ──────────────────────────────────────── */}
+        <section>
+          <div className="text-xs font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">
+            Integrations
+          </div>
+          <div className="border-2 border-foreground bg-card p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-2xl shrink-0">📅</span>
+                <div className="min-w-0">
+                  <div className="text-sm font-bold">Google Calendar</div>
+                  <div className="text-[10px] font-mono text-muted-foreground">
+                    {calConnected === null ? 'Checking...' : calConnected ? 'Connected — events auto-sync' : 'Not connected'}
+                  </div>
+                </div>
+              </div>
+              {calConnected === false && (
+                <button
+                  onClick={handleConnectCalendar}
+                  disabled={calConnecting}
+                  className="press-brutal px-3 py-2 bg-primary text-primary-foreground border-2 border-foreground text-[10px] font-mono font-bold uppercase tracking-wider shrink-0 disabled:opacity-50"
+                >
+                  {calConnecting ? 'Connecting...' : 'Connect'}
+                </button>
+              )}
+              {calConnected === true && (
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary border-2 border-primary px-2 py-1 shrink-0">
+                  Active
+                </span>
+              )}
+            </div>
+          </div>
+        </section>
       </main>
 
       {toast && (
