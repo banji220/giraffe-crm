@@ -1,42 +1,138 @@
-import { memo, useMemo } from 'react'
+'use client'
+
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface WeeklyGoalProps {
   doorsThisWeek: number
   weeklyTarget: number
+  onTargetChange?: (target: number) => void
 }
 
-export default memo(function WeeklyGoal({ doorsThisWeek, weeklyTarget }: WeeklyGoalProps) {
-  const { percent, daysLeft } = useMemo(() => {
-    const now = new Date()
-    const dayOfWeek = now.getDay() // 0=Sun
-    // Remaining days including today: Mon-Sun week
-    const remaining = dayOfWeek === 0 ? 1 : 7 - dayOfWeek
-    return {
-      percent: weeklyTarget > 0 ? Math.min(Math.round((doorsThisWeek / weeklyTarget) * 100), 100) : 0,
-      daysLeft: remaining,
+function WeeklyGoalImpl({ doorsThisWeek, weeklyTarget, onTargetChange }: WeeklyGoalProps) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(weeklyTarget))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
     }
+  }, [editing])
+
+  const startEdit = useCallback(() => {
+    setDraft(String(weeklyTarget))
+    setEditing(true)
+  }, [weeklyTarget])
+
+  const commitEdit = useCallback(() => {
+    const parsed = parseInt(draft, 10)
+    const next = isNaN(parsed) ? weeklyTarget : Math.min(9999, Math.max(1, parsed))
+    onTargetChange?.(next)
+    setEditing(false)
+  }, [draft, weeklyTarget, onTargetChange])
+
+  const { percent, daysLeft, paceNeeded } = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+    const dow = today.getDay() // 0 = Sunday
+    const daysIncluded = dow + 1 // Sun→today inclusive
+
+    const pct = Math.min(Math.round((doorsThisWeek / Math.max(1, weeklyTarget)) * 100), 100)
+    const left = 7 - daysIncluded
+    const pace = left > 0 ? Math.max(Math.ceil((weeklyTarget - doorsThisWeek) / left), 0) : 0
+
+    return { percent: pct, daysLeft: left, paceNeeded: pace }
   }, [doorsThisWeek, weeklyTarget])
 
+  const done = percent >= 100
+
   return (
-    <div className="border-2 border-foreground bg-card p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-base font-bold tracking-tight uppercase">Weekly Goal</h2>
-        <span className="text-xs font-mono font-bold text-muted-foreground uppercase tracking-wider">
-          {daysLeft}d left
+    <div
+      className={`border-2 border-foreground px-4 py-4 sm:px-5 sm:py-5 transition-colors duration-300 ${
+        done ? 'bg-foreground text-background' : 'bg-card'
+      }`}
+    >
+      {/* Row 1 — Header */}
+      <div className="flex items-center justify-between mb-2 sm:mb-3">
+        <h2 className="text-base sm:text-lg font-bold tracking-tight uppercase">Weekly Goal</h2>
+        <span className={`text-xs font-mono font-bold uppercase tracking-wider ${done ? 'opacity-80' : 'text-muted-foreground'}`}>
+          {done ? '\u2713 Complete' : `${daysLeft}d left`}
         </span>
       </div>
 
-      <div className="flex items-baseline justify-between">
-        <div>
-          <span className="text-4xl font-bold font-mono tabular-nums">{doorsThisWeek}</span>
-          <span className="text-sm font-mono text-muted-foreground ml-1">
-            / <span className="border-b border-muted-foreground">{weeklyTarget}</span> doors
-          </span>
-        </div>
-        <span className="text-2xl font-bold font-mono tabular-nums text-muted-foreground">
+      {/* Row 2 — Big number */}
+      <div className="flex items-baseline gap-2 mb-2 sm:mb-3">
+        <span className="text-3xl sm:text-5xl font-bold font-mono tabular-nums">{doorsThisWeek}</span>
+        <span className={`text-sm font-mono flex items-baseline gap-1 ${done ? 'opacity-60' : 'text-muted-foreground'}`}>
+          <span>/</span>
+          {editing ? (
+            <input
+              ref={inputRef}
+              type="number"
+              min={1}
+              max={9999}
+              value={draft}
+              onChange={e => setDraft(e.target.value)}
+              onBlur={commitEdit}
+              onKeyDown={e => {
+                if (e.key === 'Enter') commitEdit()
+                if (e.key === 'Escape') setEditing(false)
+              }}
+              className="w-16 bg-transparent border-b-2 border-current text-sm font-mono font-bold tabular-nums outline-none text-inherit px-0 py-0 appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+          ) : (
+            <button
+              type="button"
+              onClick={startEdit}
+              className={`font-bold border-b border-dashed border-current cursor-pointer hover:opacity-70 transition-opacity ${
+                done ? 'text-background' : 'text-foreground'
+              }`}
+            >
+              {weeklyTarget}
+            </button>
+          )}
+          <span>doors</span>
+        </span>
+        <span className={`ml-auto text-2xl font-bold font-mono tabular-nums ${done ? 'opacity-80' : ''}`}>
           {percent}%
         </span>
       </div>
+
+      {/* Row 3 — Progress bar */}
+      <div
+        className={`relative h-3 w-full overflow-hidden ${done ? 'bg-background/20' : 'bg-muted'}`}
+        role="progressbar"
+        aria-valuenow={percent}
+        aria-valuemin={0}
+        aria-valuemax={100}
+      >
+        <div
+          className="h-full transition-[width] duration-300 ease-out"
+          style={{
+            width: `${percent}%`,
+            backgroundColor: done
+              ? 'var(--background)'
+              : percent > 60
+                ? 'var(--heatmap-4)'
+                : percent > 30
+                  ? 'var(--heatmap-3)'
+                  : 'var(--heatmap-2)',
+          }}
+        />
+      </div>
+
+      {/* Row 4 — Footer */}
+      <p className={`text-xs font-mono mt-2 ${done ? 'opacity-60' : 'text-muted-foreground'}`}>
+        {done
+          ? 'Goal reached. Keep stacking.'
+          : daysLeft > 0
+            ? `Need ${paceNeeded}/day to hit target`
+            : null}
+      </p>
     </div>
   )
-})
+}
+
+export const WeeklyGoal = memo(WeeklyGoalImpl)
+export default WeeklyGoal

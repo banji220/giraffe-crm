@@ -78,22 +78,30 @@
   --popover-foreground: oklch(0.13 0.03 45);
   --primary: oklch(0.50 0.18 38);
   --primary-foreground: oklch(0.97 0.008 75);
-  --secondary: oklch(0.88 0.04 72);
-  --secondary-foreground: oklch(0.18 0.04 45);
-  --muted: oklch(0.88 0.03 72);
+  --secondary: oklch(0.88 0.05 72);
+  --secondary-foreground: oklch(0.13 0.03 45);
+  --muted: oklch(0.90 0.02 72);
   --muted-foreground: oklch(0.50 0.04 55);
   --accent: oklch(0.85 0.08 70);
-  --accent-foreground: oklch(0.18 0.04 45);
+  --accent-foreground: oklch(0.13 0.03 45);
   --destructive: oklch(0.50 0.25 28);
-  --destructive-foreground: oklch(0.97 0.008 75);
-  --border: oklch(0.13 0.03 45);
-  --input: oklch(0.88 0.03 72);
-  --ring: oklch(0.50 0.18 38);
-  --chart-1: oklch(0.50 0.18 38);
-  --chart-2: oklch(0.73 0.18 70);
-  --chart-3: oklch(0.48 0.18 35);
-  --chart-4: oklch(0.62 0.20 55);
-  --chart-5: oklch(0.82 0.12 85);
+  --destructive-foreground: oklch(0.98 0.005 80);
+  --success: oklch(0.5 0.13 150);
+  --success-foreground: oklch(0.98 0.005 80);
+  --warning: oklch(0.78 0.18 80);
+  --warning-foreground: oklch(0.13 0.03 45);
+  --cream: oklch(0.96 0.01 75);
+  --ink: oklch(0.13 0.03 45);
+  --amber: oklch(0.73 0.18 70);
+  --amber-deep: oklch(0.50 0.18 38);
+  --border: oklch(0.75 0.04 65);
+  --input: oklch(0.13 0.03 45);
+  --ring: oklch(0.13 0.03 45);
+  --chart-1: var(--heatmap-2);
+  --chart-2: var(--heatmap-3);
+  --chart-3: var(--heatmap-4);
+  --chart-4: var(--heatmap-5);
+  --chart-5: var(--destructive);
   --sidebar: oklch(0.96 0.01 75);
   --sidebar-foreground: oklch(0.13 0.03 45);
   --sidebar-primary: oklch(0.50 0.18 38);
@@ -102,12 +110,13 @@
   --sidebar-accent-foreground: oklch(0.18 0.04 45);
   --sidebar-border: oklch(0.13 0.03 45);
   --sidebar-ring: oklch(0.50 0.18 38);
-  --heatmap-0: oklch(0.90 0.02 75);
-  --heatmap-1: oklch(0.82 0.12 85);
-  --heatmap-2: oklch(0.73 0.18 70);
-  --heatmap-3: oklch(0.62 0.20 55);
-  --heatmap-4: oklch(0.48 0.18 35);
-  --heatmap-5: oklch(0.35 0.14 30);
+  /* Heatmap — VIBRANT. Punchy yellow → orange → red. */
+  --heatmap-0: oklch(0.92 0.008 250);
+  --heatmap-1: oklch(0.88 0.17 95);
+  --heatmap-2: oklch(0.78 0.20 75);
+  --heatmap-3: oklch(0.68 0.22 50);
+  --heatmap-4: oklch(0.58 0.24 35);
+  --heatmap-5: oklch(0.50 0.26 28);
 }
 
 .dark {
@@ -244,12 +253,33 @@
 @layer base {
   * {
     border-color: var(--color-border);
+    border-radius: 0 !important;
+    box-shadow: none !important;
   }
 
-  body {
+  html, body {
     background-color: var(--color-background);
     color: var(--color-foreground);
     font-family: var(--font-display);
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: none;
+  }
+
+  body {
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 31px,
+        oklch(0.18 0.025 60 / 0.05) 31px,
+        oklch(0.18 0.025 60 / 0.05) 32px
+      );
+  }
+
+  ::selection {
+    background: var(--amber);
+    color: var(--ink);
   }
 
   h1, h2, h3, h4, h5, h6 {
@@ -263,8 +293,55 @@
   }
 }
 
+/* Press feedback — buttons press DOWN on tap */
+.press-brutal {
+  transition: transform 0.05s ease, background-color 0.1s ease;
+}
+.press-brutal:active {
+  transform: translateY(2px);
+}
+
+/* Heatmap utility classes */
+.heatmap-0 { background-color: var(--heatmap-0); }
+.heatmap-1 { background-color: var(--heatmap-1); }
+.heatmap-2 { background-color: var(--heatmap-2); }
+.heatmap-3 { background-color: var(--heatmap-3); }
+.heatmap-4 { background-color: var(--heatmap-4); }
+.heatmap-5 { background-color: var(--heatmap-5); }
+.heatmap-bar {
+  background-image: linear-gradient(
+    to right,
+    var(--heatmap-1),
+    var(--heatmap-2),
+    var(--heatmap-3),
+    var(--heatmap-4),
+    var(--heatmap-5)
+  );
+}
+
+/* Border utilities */
+.border-brutal { border: 2px solid var(--ink); }
+.border-brutal-thick { border: 3px solid var(--ink); }
+
+/* Toast + badge animations (ported from Lovable) */
+@keyframes toast-slide-in {
+  from { transform: translate(-50%, -120%); opacity: 0; }
+  to   { transform: translate(-50%, 0);     opacity: 1; }
+}
+.toast-slide-in { animation: toast-slide-in 220ms ease-out; }
+
+@keyframes badge-bounce {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-4px); }
+}
+.badge-bounce { display: inline-block; animation: badge-bounce 700ms ease-in-out infinite; }
+
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Scrollbar-none alias */
+.scrollbar-none::-webkit-scrollbar { display: none; }
+.scrollbar-none { scrollbar-width: none; -ms-overflow-style: none; }
 
 /* Mobile scroll performance */
 .scroll-gpu {
