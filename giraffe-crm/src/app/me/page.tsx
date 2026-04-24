@@ -144,18 +144,21 @@ function MeInner() {
     lateNightKnocks: 0,
   }), [doorsToday, doorsThisWeek, streaks.current, totalCloses])
 
-  // Log doors handler
+  // Log doors handler (supports positive and negative counts)
   const handleLog = useCallback(async (count: number) => {
-    setDoorsToday(prev => prev + count)
-    setDoorsThisWeek(prev => prev + count)
+    setDoorsToday(prev => Math.max(0, prev + count))
+    setDoorsThisWeek(prev => Math.max(0, prev + count))
 
     // Update raw stats optimistically
     setRawStats(prev => {
       const existing = prev.find(d => d.date === todayKey)
       if (existing) {
-        return prev.map(d => d.date === todayKey ? { ...d, doors: d.doors + count } : d)
+        return prev.map(d => d.date === todayKey ? { ...d, doors: Math.max(0, d.doors + count) } : d)
       }
-      return [...prev, { date: todayKey, doors: count, conversations: 0, leads: 0, appointments: 0, wins: 0 }]
+      if (count > 0) {
+        return [...prev, { date: todayKey, doors: count, conversations: 0, leads: 0, appointments: 0, wins: 0 }]
+      }
+      return prev
     })
 
     const { data: existing } = await (supabase.from('daily_stats' as any)
@@ -165,9 +168,9 @@ function MeInner() {
 
     if (existing) {
       await (supabase.from('daily_stats' as any) as any)
-        .update({ doors: existing.doors + count })
+        .update({ doors: Math.max(0, existing.doors + count) })
         .eq('id', existing.id)
-    } else {
+    } else if (count > 0) {
       const { data: { user } } = await supabase.auth.getUser()
       if (user) {
         await (supabase.from('daily_stats' as any) as any)
@@ -175,6 +178,27 @@ function MeInner() {
       }
     }
   }, [supabase, todayKey])
+
+  // Reset today's count to zero
+  const handleReset = useCallback(async () => {
+    setDoorsToday(0)
+    setDoorsThisWeek(prev => Math.max(0, prev - doorsToday))
+
+    setRawStats(prev =>
+      prev.map(d => d.date === todayKey ? { ...d, doors: 0 } : d)
+    )
+
+    const { data: existing } = await (supabase.from('daily_stats' as any)
+      .select('id')
+      .eq('date', todayKey)
+      .maybeSingle() as unknown as Promise<{ data: { id: string } | null; error: any }>)
+
+    if (existing) {
+      await (supabase.from('daily_stats' as any) as any)
+        .update({ doors: 0 })
+        .eq('id', existing.id)
+    }
+  }, [supabase, todayKey, doorsToday])
 
   // Weekly target change handler — persist to user_settings
   const handleWeeklyTargetChange = useCallback(async (target: number) => {
@@ -227,7 +251,7 @@ function MeInner() {
 
       {/* ── Main Content — Mobile stacked ──────────────────────────── */}
       <main className="flex-1 pb-24 space-y-4 px-4">
-        <QuickLog onLog={handleLog} todayDoors={doorsToday} />
+        <QuickLog onLog={handleLog} onReset={handleReset} todayDoors={doorsToday} />
 
         <DailyMission doorsToday={doorsToday} target={dailyTarget} suggestion={suggestion} />
 
