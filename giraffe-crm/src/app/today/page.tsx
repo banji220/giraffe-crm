@@ -10,7 +10,7 @@
  * oklch tokens, zero border-radius.
  */
 
-import { useEffect, useRef, useState, useMemo, startTransition } from 'react'
+import { useEffect, useRef, useState, useMemo, useCallback, startTransition } from 'react'
 import Link from 'next/link'
 import AuthGate from '@/components/auth/AuthGate'
 import BottomNav from '@/components/nav/BottomNav'
@@ -38,8 +38,14 @@ type JobRow = {
   scheduled_at: string | null
   status: string | null
   price: number | null
+  service_types: string[] | null
+  window_count: number | null
   house_address?: string | null
+  contact_name?: string | null
+  contact_phone?: string | null
 }
+
+const PAYMENT_METHODS = ['cash', 'check', 'card', 'venmo', 'zelle'] as const
 
 export default function TodayPage() {
   return (
@@ -58,6 +64,7 @@ function TodayInner() {
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [followUps, setFollowUps] = useState<HouseRow[]>([])
   const [expiring, setExpiring] = useState<HouseRow[]>([])
+  const [completingJob, setCompletingJob] = useState<JobRow | null>(null)
   const [loading, setLoading] = useState(true)
 
   // ── Fetch all data in parallel ───────────────────────────────────────
@@ -78,7 +85,7 @@ function TodayInner() {
 
       // Jobs today
       supabase.from('jobs')
-        .select('id, house_id, scheduled_at, status, price')
+        .select('id, house_id, scheduled_at, status, price, service_types, window_count')
         .gte('scheduled_at', startOfDay.toISOString())
         .lte('scheduled_at', endOfDay.toISOString())
         .neq('status', 'completed')
@@ -104,18 +111,23 @@ function TodayInner() {
       const followRaw   = (f.data as HouseRow[]) ?? []
       const expRaw      = (e.data as HouseRow[]) ?? []
 
-      // Jobs need house addresses — batch lookup
+      // Jobs need house info — batch lookup
       const jobHouseIds = [...new Set(jobsRaw.map(r => r.house_id).filter(Boolean))]
       if (jobHouseIds.length > 0) {
         const { data: houses } = await supabase
           .from('houses')
-          .select('id, full_address')
+          .select('id, full_address, contact_name, contact_phone')
           .in('id', jobHouseIds)
-        const addrMap = new Map<string, string | null>()
-        ;(houses as { id: string; full_address: string | null }[] | null)?.forEach(
-          h => addrMap.set(h.id, h.full_address)
+        const houseMap = new Map<string, { full_address: string | null; contact_name: string | null; contact_phone: string | null }>()
+        ;(houses as { id: string; full_address: string | null; contact_name: string | null; contact_phone: string | null }[] | null)?.forEach(
+          h => houseMap.set(h.id, h)
         )
-        jobsRaw.forEach(j => { j.house_address = addrMap.get(j.house_id) ?? null })
+        jobsRaw.forEach(j => {
+          const h = houseMap.get(j.house_id)
+          j.house_address = h?.full_address ?? null
+          j.contact_name = h?.contact_name ?? null
+          j.contact_phone = h?.contact_phone ?? null
+        })
       }
 
       startTransition(() => {
@@ -128,6 +140,79 @@ function TodayInner() {
     })
   }, [supabase, todayKey])
 
+  // ── Job actions ──────────────────────────────────────────────────────
+  const handleStartJob = useCallback(async (job: JobRow) => {
+    await supabase.from('jobs').update({ status: 'in_progress' }).eq('id', job.id)
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, status: 'in_progress' } : j))
+  }, [supabase])
+
+  const handleCompleteJob = useCallback(async (jobId: string, paidAmount: number, paymentMethod: string) => {
+    const now = new Date().toISOString()
+    const job = jobs.find(j => j.id === jobId)
+
+    await supabase.from('jobs').update({
+      status: 'completed',
+      completed_at: now,
+      paid_amount: paidAmount,
+      payment_method: paymentMethod,
+    }).eq('id', jobId)
+
+    // Update house LTV + total_jobs + schedule reclean
+    if (job) {
+      const { data: house } = await supabase.from('houses')
+        .select('lifetime_value, total_jobs, contact_name, contact_phone, contact_email, full_address')
+        .eq('id', job.house_id)
+        .single()
+      if (house) {
+        const recleanDays = 180
+        await supabase.from('houses').update({
+          lifetime_value: (house.lifetime_value ?? 0) + (job.price ?? 0),
+          total_jobs: (house.total_jobs ?? 0) + 1,
+          reclean_due_at: new Date(Date.now() + recleanDays * 86400000).toISOString(),
+        }).eq('id', job.house_id)
+
+        // Auto-generate invoice
+        const serviceLabel = (job.service_types ?? []).map((s: string) =>
+          s === 'interior_exterior' ? 'Interior + Exterior' : s.charAt(0).toUpperCase() + s.slice(1)
+        ).join(', ') || 'Window Cleaning'
+
+        const lineItems = [{
+          description: `${serviceLabel}${job.window_count ? ` (${job.window_count} windows)` : ''}`,
+          qty: 1,
+          unit_price: job.price ?? 0,
+          total: job.price ?? 0,
+        }]
+
+        const { data: seqRes } = await (supabase.rpc as any)('nextval_invoice_number')
+        const invoiceNum = seqRes ?? `INV-${Date.now().toString(36).toUpperCase()}`
+
+        const { data: { user } } = await supabase.auth.getUser()
+
+        await (supabase.from('invoices') as any).insert({
+          job_id: jobId,
+          house_id: job.house_id,
+          invoice_number: typeof invoiceNum === 'number' ? `INV-${invoiceNum}` : invoiceNum,
+          status: paidAmount >= (job.price ?? 0) ? 'paid' : paidAmount > 0 ? 'partial' : 'unpaid',
+          contact_name: house.contact_name,
+          contact_phone: house.contact_phone,
+          contact_email: house.contact_email,
+          address: house.full_address,
+          line_items: lineItems,
+          subtotal: job.price ?? 0,
+          total: job.price ?? 0,
+          paid_amount: paidAmount,
+          payment_method: paymentMethod,
+          paid_at: paidAmount > 0 ? now : null,
+          created_by: user?.id,
+        })
+      }
+    }
+
+    // Remove from list
+    setJobs(prev => prev.filter(j => j.id !== jobId))
+    setCompletingJob(null)
+  }, [supabase, jobs])
+
   const total = appts.length + jobs.length + followUps.length + expiring.length
 
   return (
@@ -139,7 +224,7 @@ function TodayInner() {
         <div className="px-4 sm:px-10 pt-4">
           <div className="mx-auto max-w-5xl space-y-5">
             <HouseSection title="Appointments today" rows={appts} urgency />
-            <JobSection   title="Jobs today"          rows={jobs} />
+            <JobSection title="Jobs today" rows={jobs} onStart={handleStartJob} onComplete={setCompletingJob} />
             <HouseSection title="Follow-ups due"      rows={followUps} urgency />
             <HouseSection title="Expiring quotes"     rows={expiring} showAge />
 
@@ -157,6 +242,15 @@ function TodayInner() {
           </div>
         </div>
       </main>
+      {/* Job Completion Modal */}
+      {completingJob && (
+        <JobCompleteModal
+          job={completingJob}
+          onClose={() => setCompletingJob(null)}
+          onComplete={handleCompleteJob}
+        />
+      )}
+
       <BottomNav />
     </div>
   )
@@ -264,26 +358,153 @@ function HouseCard({ row, urgency, showAge }: { row: HouseRow; urgency?: boolean
 }
 
 /* ─── Job section ──────────────────────────────────────────────────────── */
-function JobSection({ title, rows }: { title: string; rows: JobRow[] }) {
+function JobSection({ title, rows, onStart, onComplete }: {
+  title: string
+  rows: JobRow[]
+  onStart: (job: JobRow) => void
+  onComplete: (job: JobRow) => void
+}) {
   return (
     <SectionShell title={title} count={rows.length}>
       {rows.map(j => {
         const addr = j.house_address || 'Unknown address'
+        const name = j.contact_name?.trim()
         const when = j.scheduled_at ? new Date(j.scheduled_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : ''
+        const isInProgress = j.status === 'in_progress'
+
         return (
-          <div key={j.id} className="border-2 border-foreground bg-card p-3">
-            <div className="flex items-start gap-2">
-              <div className="flex-1 min-w-0">
-                <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary">{when || 'Today'}</div>
-                <div className="text-sm font-bold truncate">{addr}</div>
-                {j.price ? <div className="text-xs font-mono text-muted-foreground mt-0.5">${j.price}</div> : null}
+          <div key={j.id} className="border-2 border-foreground bg-card p-3 relative">
+            {/* Status stripe */}
+            <div
+              className="absolute left-0 top-0 bottom-0 w-1"
+              style={{ background: isInProgress ? 'var(--heatmap-3)' : 'var(--primary)' }}
+            />
+            <div className="pl-3">
+              <div className="flex items-start gap-2">
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary">{when || 'Today'}</span>
+                    {isInProgress && (
+                      <span className="text-[10px] font-mono font-bold uppercase px-1.5 py-0.5" style={{ background: 'var(--heatmap-3)', color: 'var(--background)' }}>
+                        In progress
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-sm font-bold truncate mt-0.5">{name || addr}</div>
+                  {name && <div className="text-xs font-mono text-muted-foreground truncate">{addr}</div>}
+                  {j.price ? <div className="text-xs font-mono text-muted-foreground mt-0.5">${j.price}</div> : null}
+                </div>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  {j.contact_phone && <CallBtn phone={j.contact_phone} />}
+                  <NavBtn address={addr} />
+                </div>
               </div>
-              <NavBtn address={addr} />
+
+              {/* Action buttons */}
+              <div className="flex gap-2 mt-2">
+                {!isInProgress ? (
+                  <button
+                    onClick={() => onStart(j)}
+                    className="flex-1 press-brutal py-2 border-2 border-foreground bg-foreground text-background font-mono font-bold text-xs uppercase tracking-wider active:translate-y-[1px] transition-transform"
+                  >
+                    Start Job
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => onComplete(j)}
+                    className="flex-1 press-brutal py-2 border-2 border-foreground font-mono font-bold text-xs uppercase tracking-wider active:translate-y-[1px] transition-transform"
+                    style={{ background: 'var(--heatmap-5)', color: 'var(--background)', borderColor: 'var(--heatmap-5)' }}
+                  >
+                    Complete Job
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         )
       })}
     </SectionShell>
+  )
+}
+
+/* ─── Job Completion Modal ────────────────────────────────────────────── */
+function JobCompleteModal({ job, onClose, onComplete }: {
+  job: JobRow
+  onClose: () => void
+  onComplete: (jobId: string, paidAmount: number, paymentMethod: string) => void
+}) {
+  const [paidAmount, setPaidAmount] = useState(job.price?.toString() || '')
+  const [method, setMethod] = useState<string>('cash')
+  const [saving, setSaving] = useState(false)
+
+  const handleSubmit = async () => {
+    setSaving(true)
+    await onComplete(job.id, parseFloat(paidAmount) || 0, method)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
+      <div className="absolute inset-0 bg-foreground/50" />
+      <div
+        className="relative w-full max-w-md bg-background border-2 border-foreground p-5 mx-4 mb-4 sm:mb-0"
+        onClick={e => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xs font-mono font-bold uppercase tracking-[0.2em]">Complete Job</h2>
+          <button onClick={onClose} className="text-muted-foreground font-mono font-bold text-lg leading-none">&times;</button>
+        </div>
+
+        <div className="text-sm font-bold truncate">{job.contact_name || job.house_address || 'Unknown'}</div>
+        <div className="text-xs font-mono text-muted-foreground truncate mb-4">{job.house_address}</div>
+
+        {/* Amount */}
+        <label className="block mb-3">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Amount Paid</span>
+          <div className="flex items-center border-2 border-foreground mt-1">
+            <span className="px-3 py-2 font-mono font-bold text-muted-foreground border-r-2 border-foreground">$</span>
+            <input
+              type="number"
+              inputMode="decimal"
+              value={paidAmount}
+              onChange={e => setPaidAmount(e.target.value)}
+              className="flex-1 px-3 py-2 font-mono font-bold text-lg bg-transparent outline-none tabular-nums"
+              placeholder="0"
+            />
+          </div>
+        </label>
+
+        {/* Payment method */}
+        <div className="mb-4">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground block mb-1.5">Payment Method</span>
+          <div className="flex flex-wrap gap-1.5">
+            {PAYMENT_METHODS.map(m => (
+              <button
+                key={m}
+                onClick={() => setMethod(m)}
+                className={[
+                  'press-brutal px-3 py-1.5 border-2 border-foreground font-mono font-bold text-xs uppercase tracking-wider transition-colors',
+                  method === m
+                    ? 'bg-foreground text-background'
+                    : 'bg-card text-foreground',
+                ].join(' ')}
+              >
+                {m}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Submit */}
+        <button
+          onClick={handleSubmit}
+          disabled={saving}
+          className="w-full press-brutal py-3 border-2 border-foreground bg-foreground text-background font-mono font-bold text-sm uppercase tracking-wider active:translate-y-[1px] transition-transform disabled:opacity-50"
+        >
+          {saving ? 'Saving...' : 'Mark Complete'}
+        </button>
+      </div>
+    </div>
   )
 }
 
