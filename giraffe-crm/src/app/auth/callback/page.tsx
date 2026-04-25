@@ -1,11 +1,12 @@
 'use client'
 
 /**
- * /auth/callback — Google OAuth return destination.
+ * /auth/callback — handles TWO types of OAuth callbacks:
  *
- * Exchanges the PKCE code, probes the allowlist, sets the cross-subdomain
- * beacon, and redirects. No animation — just a static logo while the work
- * completes. Speed over spectacle.
+ * 1. Supabase auth (Google sign-in) — has `code` param, NO `scope` param
+ * 2. Google Calendar connect — has `code` + `scope` containing "calendar"
+ *
+ * We detect which one it is and handle accordingly.
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -23,8 +24,44 @@ export default function AuthCallbackPage() {
     ;(async () => {
       const url = new URL(window.location.href)
       const code = url.searchParams.get('code')
+      const scope = url.searchParams.get('scope') || ''
+      const state = url.searchParams.get('state')
       const errParam = url.searchParams.get('error_description') || url.searchParams.get('error')
 
+      // ── Google Calendar callback ─────────────────────────────────
+      // Detected by scope containing "calendar"
+      if (scope.includes('calendar') && code && state) {
+        setMsg('Connecting Google Calendar...')
+        try {
+          const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+          const res = await fetch(
+            `${supabaseUrl}/functions/v1/google-auth?action=callback`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ code, state }),
+            }
+          )
+          const data = await res.json()
+          if (cancelled) return
+
+          if (!res.ok || data.error) {
+            setMsg('Calendar connection failed')
+            setTimeout(() => router.replace('/me'), 2000)
+            return
+          }
+
+          setMsg('Calendar connected!')
+          setTimeout(() => router.replace('/me'), 1500)
+        } catch {
+          if (cancelled) return
+          setMsg('Calendar connection failed')
+          setTimeout(() => router.replace('/me'), 2000)
+        }
+        return
+      }
+
+      // ── Supabase auth callback (normal sign-in) ──────────────────
       if (errParam) {
         if (!cancelled) {
           setMsg('Sign-in failed')
