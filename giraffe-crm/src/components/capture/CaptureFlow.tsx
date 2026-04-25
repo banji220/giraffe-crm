@@ -94,6 +94,7 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
   // Card 2 — WHEN
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('10:00')
+  const [showCustomTime, setShowCustomTime] = useState(false)
 
   // Card 3 — WHAT
   const [windowCount, setWindowCount] = useState(20)
@@ -282,24 +283,45 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
 
           {/* Time picker */}
           {selectedDate && (
-            <div className="flex gap-2">
-              {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map(t => {
-                const active = selectedTime === t
-                const label = new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-                return (
-                  <button
-                    key={t}
-                    onClick={() => setSelectedTime(t)}
-                    className={`flex-1 py-2.5 border-2 border-foreground font-mono text-xs font-bold text-center transition-colors active:translate-y-[1px] ${
-                      active
-                        ? 'bg-foreground text-background'
-                        : 'bg-card text-foreground'
-                    }`}
-                  >
-                    {label}
-                  </button>
-                )
-              })}
+            <div className="space-y-2">
+              <div className="grid grid-cols-4 gap-2">
+                {['09:00', '10:00', '11:00', '13:00', '14:00', '15:00'].map(t => {
+                  const active = selectedTime === t && !showCustomTime
+                  const label = new Date(`2000-01-01T${t}`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+                  return (
+                    <button
+                      key={t}
+                      onClick={() => { setSelectedTime(t); setShowCustomTime(false) }}
+                      className={`py-2.5 border-2 border-foreground font-mono text-xs font-bold text-center transition-colors active:translate-y-[1px] ${
+                        active
+                          ? 'bg-foreground text-background'
+                          : 'bg-card text-foreground'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  )
+                })}
+                {/* Custom time button */}
+                <button
+                  onClick={() => setShowCustomTime(true)}
+                  className={`py-2.5 border-2 border-foreground font-mono text-xs font-bold text-center transition-colors active:translate-y-[1px] col-span-2 ${
+                    showCustomTime
+                      ? 'bg-foreground text-background'
+                      : 'bg-card text-foreground'
+                  }`}
+                >
+                  Custom
+                </button>
+              </div>
+              {showCustomTime && (
+                <input
+                  type="time"
+                  value={selectedTime}
+                  onChange={e => setSelectedTime(e.target.value)}
+                  className="field-input font-mono text-center text-lg"
+                />
+              )}
             </div>
           )}
         </div>
