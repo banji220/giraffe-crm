@@ -589,7 +589,29 @@ export default function MapView() {
       })
     }
 
-    // 4. Push to Google Calendar (non-blocking — won't break the flow if it fails)
+    // 4. Send confirmation SMS if closed + has phone (non-blocking)
+    if (data.outcome === 'closed_on_spot' && data.contactPhone && data.scheduledAt) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      supabase.current.auth.getSession().then(({ data: { session } }) => {
+        if (!session) return
+        fetch(`${supabaseUrl}/functions/v1/send-confirmation-sms`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phone: data.contactPhone,
+            customer_name: data.contactName,
+            scheduled_date: data.scheduledAt,
+            price: data.quotedPrice,
+            address: selectedHouse.fullAddress,
+          }),
+        }).catch(err => console.error('Confirmation SMS failed:', err))
+      })
+    }
+
+    // 5. Push to Google Calendar (non-blocking — won't break the flow if it fails)
     if (data.scheduledAt) {
       createCalendarEvent({
         houseId: selectedHouse.id,

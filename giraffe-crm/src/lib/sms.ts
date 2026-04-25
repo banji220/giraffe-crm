@@ -29,10 +29,10 @@ export function buildCallUrl(phone: string): string {
  */
 export const SMS_TEMPLATES = {
   quoteFollowUp: (name: string, price: string) =>
-    `Hi ${name}! Just following up on the window cleaning quote for ${price}. Would you like to go ahead and get those scheduled? - Tyler, Holy Giraffe`,
+    `Hi ${name}! Just following up on the window cleaning quote for ${price}. Would you like to go ahead and get those scheduled? - Christian, Holy Giraffe`,
 
   appointmentReminder: (name: string, date: string) =>
-    `Hi ${name}! This is Tyler from Holy Giraffe. Just confirming your window cleaning appointment for ${date}. See you then!`,
+    `Hi ${name}! This is Christian from Holy Giraffe. Just confirming your window cleaning appointment for ${date}. See you then!`,
 
   reviewRequest: (name: string) =>
     `Hi ${name}! Thank you for choosing Holy Giraffe for your window cleaning! If you have a moment, we'd really appreciate a quick Google review. It helps us a lot! Thank you!`,
