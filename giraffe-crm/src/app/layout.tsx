@@ -22,6 +22,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <head>
+        {/* PWA manifest */}
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="Giraffe" />
+        <link rel="apple-touch-icon" href="/logo.png" />
+
         {/* Mapbox GL + Geocoder CSS */}
         <link
           href="https://api.mapbox.com/mapbox-gl-js/v3.8.0/mapbox-gl.css"
