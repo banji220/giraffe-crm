@@ -136,7 +136,7 @@ export default function StepFlow({
             {steps.map((step) => (
               <div
                 key={step.id}
-                className="w-full flex-shrink-0 px-4 pb-4 overflow-y-auto"
+                className="w-full min-w-0 flex-shrink-0 px-4 pb-4 overflow-y-auto overflow-x-hidden"
               >
                 {step.content}
               </div>

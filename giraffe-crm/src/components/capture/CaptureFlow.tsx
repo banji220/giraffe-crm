@@ -335,10 +335,10 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
 
           {/* Window count stepper */}
           <FieldGroup label="Windows">
-            <div className="flex items-center gap-3">
+            <div className="grid grid-cols-[3rem_1fr_3rem] items-center gap-2">
               <button
                 onClick={() => setWindowCount(Math.max(1, windowCount - 5))}
-                className="w-14 h-14 border-2 border-foreground bg-card text-foreground text-2xl font-bold flex items-center justify-center active:translate-y-[1px] transition-transform"
+                className="h-12 border-2 border-foreground bg-card text-foreground text-2xl font-bold flex items-center justify-center active:translate-y-[1px] transition-transform"
               >
                 −
               </button>
@@ -347,11 +347,11 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
                 value={windowCount}
                 onChange={e => setWindowCount(Math.max(1, parseInt(e.target.value) || 1))}
                 inputMode="numeric"
-                className="flex-1 text-center text-3xl font-bold font-mono border-2 border-foreground py-2 bg-card text-foreground focus:outline-none"
+                className="w-full min-w-0 text-center text-3xl font-bold font-mono border-2 border-foreground py-2 bg-card text-foreground focus:outline-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none [-moz-appearance:textfield]"
               />
               <button
                 onClick={() => setWindowCount(windowCount + 5)}
-                className="w-14 h-14 border-2 border-foreground bg-card text-foreground text-2xl font-bold flex items-center justify-center active:translate-y-[1px] transition-transform"
+                className="h-12 border-2 border-foreground bg-card text-foreground text-2xl font-bold flex items-center justify-center active:translate-y-[1px] transition-transform"
               >
                 +
               </button>
