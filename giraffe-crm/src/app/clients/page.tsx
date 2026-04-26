@@ -313,7 +313,7 @@ function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => v
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-foreground/50" />
       <div
-        className="relative w-full max-w-md bg-background border-2 border-foreground mx-4 mb-4 sm:mb-0 max-h-[90vh] overflow-y-auto"
+        className="relative w-full max-w-md bg-background border-2 border-foreground mx-4 mb-20 sm:mb-0 max-h-[80vh] overflow-y-auto"
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
