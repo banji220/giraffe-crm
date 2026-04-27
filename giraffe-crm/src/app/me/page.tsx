@@ -200,6 +200,17 @@ function MeInner() {
     }
   }, [supabase, todayKey, doorsToday])
 
+  // Daily target change handler — persist + auto-update weekly (daily × 5)
+  const handleDailyTargetChange = useCallback(async (target: number) => {
+    setDailyTarget(target)
+    const newWeekly = target * 5
+    setWeeklyTarget(newWeekly)
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return
+    await (supabase.from('user_settings' as any) as any)
+      .upsert({ user_id: user.id, daily_target: target, weekly_target: newWeekly }, { onConflict: 'user_id' })
+  }, [supabase])
+
   // Weekly target change handler — persist to user_settings
   const handleWeeklyTargetChange = useCallback(async (target: number) => {
     setWeeklyTarget(target)
@@ -253,7 +264,7 @@ function MeInner() {
       <main className="flex-1 pb-24 space-y-4 px-4">
         <QuickLog onLog={handleLog} onReset={handleReset} todayDoors={doorsToday} />
 
-        <DailyMission doorsToday={doorsToday} target={dailyTarget} suggestion={suggestion} />
+        <DailyMission doorsToday={doorsToday} target={dailyTarget} suggestion={suggestion} onTargetChange={handleDailyTargetChange} />
 
         <WeeklyGoal
           doorsThisWeek={doorsThisWeek}

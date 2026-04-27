@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 /* Pick a heatmap CSS var based on percentage 0-100. */
 function fillForPct(pct: number): string {
@@ -23,9 +23,33 @@ interface Props {
   doorsToday: number
   target: number
   suggestion?: string
+  onTargetChange?: (target: number) => void
 }
 
-export default function DailyMission({ doorsToday, target, suggestion }: Props) {
+export default function DailyMission({ doorsToday, target, suggestion, onTargetChange }: Props) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(String(target))
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (editing) {
+      inputRef.current?.focus()
+      inputRef.current?.select()
+    }
+  }, [editing])
+
+  const startEdit = useCallback(() => {
+    setDraft(String(target))
+    setEditing(true)
+  }, [target])
+
+  const commitEdit = useCallback(() => {
+    const parsed = parseInt(draft, 10)
+    const next = isNaN(parsed) ? target : Math.min(999, Math.max(1, parsed))
+    onTargetChange?.(next)
+    setEditing(false)
+  }, [draft, target, onTargetChange])
+
   const pct = useMemo(
     () => Math.min(100, Math.round((doorsToday / Math.max(1, target)) * 100)),
     [doorsToday, target],
@@ -55,13 +79,38 @@ export default function DailyMission({ doorsToday, target, suggestion }: Props) 
         />
         <div className="absolute inset-0 flex items-center justify-center font-mono font-bold text-xs tabular-nums text-foreground mix-blend-difference">
           <span className="text-background">
-            {doorsToday} / {target} doors
+            {doorsToday} /{' '}
+            {editing ? (
+              <input
+                ref={inputRef}
+                type="number"
+                min={1}
+                max={999}
+                value={draft}
+                onChange={e => setDraft(e.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') commitEdit()
+                  if (e.key === 'Escape') setEditing(false)
+                }}
+                className="w-12 bg-transparent border-b border-current text-xs font-mono font-bold tabular-nums outline-none text-inherit px-0 py-0 text-center appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              />
+            ) : (
+              <button onClick={startEdit} className="border-b border-dashed border-current">
+                {target}
+              </button>
+            )}{' '}
+            doors
           </span>
         </div>
       </div>
 
+      {!editing && (
+        <p className="mt-1 text-[9px] font-mono text-muted-foreground text-center">Tap target to edit</p>
+      )}
+
       {suggestion && (
-        <p className="mt-3 text-xs font-mono text-muted-foreground">{suggestion}</p>
+        <p className="mt-2 text-xs font-mono text-muted-foreground">{suggestion}</p>
       )}
     </div>
   )
