@@ -577,11 +577,11 @@ export default function MapView() {
       })
       .eq('id', selectedHouse.id)
 
-    // 3. Create job if closed on spot
-    if (data.outcome === 'closed_on_spot' && data.scheduledAt) {
+    // 3. Create job if closed on spot or appointment set
+    if (data.outcome === 'closed_on_spot' || data.outcome === 'appointment_set') {
       await supabase.current.from('jobs').insert({
         house_id: selectedHouse.id,
-        scheduled_at: data.scheduledAt,
+        scheduled_at: data.scheduledAt || null,
         price: data.quotedPrice,
         service_types: data.serviceTypes,
         window_count: data.windowCount,

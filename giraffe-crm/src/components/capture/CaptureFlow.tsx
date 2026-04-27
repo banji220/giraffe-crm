@@ -91,8 +91,11 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
   const [phone, setPhone] = useState('')
   const [email, setEmail] = useState('')
 
-  // Card 2 — WHEN
-  const [selectedDate, setSelectedDate] = useState('')
+  // Card 2 — WHEN (default to today — date is mandatory)
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const d = new Date()
+    return d.toISOString().slice(0, 10)
+  })
   const [selectedTime, setSelectedTime] = useState('10:00')
   const [showCustomTime, setShowCustomTime] = useState(false)
 
@@ -242,7 +245,7 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
               return (
                 <button
                   key={val}
-                  onClick={() => setSelectedDate(active ? '' : val)}
+                  onClick={() => setSelectedDate(val)}
                   className={`py-3 border-2 border-foreground font-mono text-xs font-bold uppercase tracking-wider text-center transition-colors active:translate-y-[1px] ${
                     active
                       ? 'bg-foreground text-background'

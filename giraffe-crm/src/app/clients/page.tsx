@@ -533,9 +533,9 @@ function ClientDetail({ client, onClose, onUpdate }: {
             </div>
           </div>
 
-          {/* ── Jobs — tap to reschedule ────────────────────────────── */}
+          {/* ── Jobs — tap to schedule/reschedule ─────────────────────── */}
           <div>
-            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Jobs — tap to reschedule</h3>
+            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Jobs — tap to edit</h3>
             {loadingData ? (
               <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
             ) : jobs.length === 0 ? (
@@ -573,8 +573,8 @@ function ClientDetail({ client, onClose, onUpdate }: {
                         }`}>
                           {j.status}
                         </span>
-                        <span className="text-[10px] font-mono text-muted-foreground">
-                          {j.scheduled_at ? formatDateFull(j.scheduled_at) : '—'}
+                        <span className={`text-[10px] font-mono ${j.scheduled_at ? 'text-muted-foreground' : 'text-destructive font-bold'}`}>
+                          {j.scheduled_at ? formatDateFull(j.scheduled_at) : 'Not scheduled'}
                         </span>
                       </div>
                       <span className="text-sm font-bold font-mono tabular-nums">${(j.price ?? 0).toFixed(0)}</span>
@@ -598,7 +598,7 @@ function ClientDetail({ client, onClose, onUpdate }: {
                           disabled={rescheduling || !rescheduleDate}
                           className="w-full py-2.5 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform disabled:opacity-50"
                         >
-                          {rescheduling ? 'Saving...' : 'Reschedule + Update Calendar'}
+                          {rescheduling ? 'Saving...' : j.scheduled_at ? 'Reschedule + Update Calendar' : 'Schedule + Add to Calendar'}
                         </button>
                         <div className="text-[9px] font-mono text-muted-foreground text-center">
                           Removes old event, creates new one, sends SMS
