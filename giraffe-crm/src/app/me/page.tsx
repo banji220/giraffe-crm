@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, useCallback, useMemo, startTransition } from 'react'
 import { useRouter } from 'next/navigation'
 import AuthGate from '@/components/auth/AuthGate'
+import PageHeader from '@/components/nav/PageHeader'
 import BottomNav from '@/components/nav/BottomNav'
 import QuickLog from '@/components/knock-tracker/QuickLog'
 import DailyMission from '@/components/knock-tracker/DailyMission'
@@ -242,23 +243,17 @@ function MeInner() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* ── Profile Header ─────────────────────────────────────────── */}
-      <header className="px-4 pt-6 pb-4">
-        <div className="flex items-center gap-3">
-          <img src="/logo-dark.png" alt="Giraffe CRM" className="w-12 h-12 object-contain" draggable={false} />
-          <div className="flex-1 min-w-0">
-            <div className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground">Me</div>
-            <div className="text-xl font-bold tracking-tight">Giraffe CRM</div>
-            <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Window Cleaning Pro</div>
-          </div>
+      <PageHeader
+        section="Me"
+        right={
           <button
             onClick={signOut}
             className="press-brutal px-3 py-2 text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground border-2 border-foreground"
           >
             Sign out
           </button>
-        </div>
-      </header>
+        }
+      />
 
       {/* ── Main Content — Mobile stacked ──────────────────────────── */}
       <main className="flex-1 pb-24 space-y-4 px-4">

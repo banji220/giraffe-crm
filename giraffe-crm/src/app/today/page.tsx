@@ -13,6 +13,7 @@
 import { useEffect, useRef, useState, useMemo, useCallback, startTransition } from 'react'
 import Link from 'next/link'
 import AuthGate from '@/components/auth/AuthGate'
+import PageHeader from '@/components/nav/PageHeader'
 import BottomNav from '@/components/nav/BottomNav'
 import { createClient } from '@/lib/supabase/client'
 import { formatE164ForDisplay } from '@/lib/phone'
@@ -217,7 +218,7 @@ function TodayInner() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      <Header total={total} />
+      <PageHeader section="Today" />
 
       <main className="flex-1 pb-24">
         {/* ── CRM sections ───────────────────────────────────────── */}
@@ -256,28 +257,6 @@ function TodayInner() {
   )
 }
 
-/* ─── Header ───────────────────────────────────────────────────────────── */
-function Header({ total }: { total: number }) {
-  const today = new Date().toLocaleDateString([], { weekday: 'long', month: 'long', day: 'numeric' })
-  return (
-    <header className="border-b-4 border-foreground px-4 pt-6 pb-4 sm:px-10">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex items-center gap-2 mb-1">
-          <img src="/logo-dark.png" alt="" className="w-6 h-6 object-contain" draggable={false} />
-          <p className="text-[10px] sm:text-xs font-mono font-bold uppercase tracking-[0.3em] text-primary">Giraffe CRM</p>
-        </div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight">{today}</h1>
-        {total > 0 && (
-          <div className="mt-1.5">
-            <span className="text-xs font-mono text-muted-foreground">
-              <span className="font-bold text-foreground">{total}</span> action{total === 1 ? '' : 's'} pending
-            </span>
-          </div>
-        )}
-      </div>
-    </header>
-  )
-}
 
 /* ─── Section shell ────────────────────────────────────────────────────── */
 function SectionShell({ title, count, children }: { title: string; count: number; children: React.ReactNode }) {

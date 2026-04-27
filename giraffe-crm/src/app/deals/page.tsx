@@ -13,6 +13,7 @@
 
 import { useEffect, useRef, useState, startTransition } from 'react'
 import AuthGate from '@/components/auth/AuthGate'
+import PageHeader from '@/components/nav/PageHeader'
 import BottomNav from '@/components/nav/BottomNav'
 import { createClient } from '@/lib/supabase/client'
 import { formatE164ForDisplay } from '@/lib/phone'
@@ -146,14 +147,7 @@ function DealsInner() {
 
   return (
     <div className="min-h-screen flex flex-col bg-background">
-      {/* Header */}
-      <header className="border-b-4 border-foreground px-4 pt-6 pb-4">
-        <div className="flex items-center gap-2 mb-1">
-          <img src="/logo-dark.png" alt="" className="w-6 h-6 object-contain" draggable={false} />
-          <p className="text-[10px] font-mono font-bold uppercase tracking-[0.3em] text-muted-foreground">Deals</p>
-        </div>
-        <h1 className="text-2xl font-bold tracking-tight">Pipeline</h1>
-      </header>
+      <PageHeader section="Deals" />
 
       <main className="flex-1 px-4 pb-24 pt-4 space-y-4">
         {/* Pipeline Money Bar */}
