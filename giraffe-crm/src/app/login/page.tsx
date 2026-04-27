@@ -42,7 +42,7 @@ function LoginInner() {
     supabase.auth.getSession().then(({ data }) => {
       if (data.session?.user?.phone || data.session?.user?.email) {
         setSessionBeacon()
-        router.replace('/today')
+        router.replace('/me')
       }
     })
   }, [router, supabase])

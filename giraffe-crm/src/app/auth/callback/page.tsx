@@ -93,7 +93,7 @@ export default function AuthCallbackPage() {
 
       if (rpcErr) {
         setSessionBeacon()
-        router.replace('/today')
+        router.replace('/me')
         return
       }
       if (!allowed) {
@@ -105,7 +105,7 @@ export default function AuthCallbackPage() {
       }
 
       setSessionBeacon()
-      router.replace('/today')
+      router.replace('/me')
     })()
     return () => { cancelled = true }
   }, [router, supabase])
