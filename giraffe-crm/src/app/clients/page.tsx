@@ -242,6 +242,56 @@ function ClientCard({ client: c, onTap }: { client: ClientRow; onTap: () => void
   )
 }
 
+/* ─── Inline editable field — tap the value to edit ────────────── */
+function EditableField({ label, value, onSave, type = 'text', inputMode, placeholder }: {
+  label: string
+  value: string
+  onSave: (v: string) => void
+  type?: string
+  inputMode?: 'tel' | 'email' | 'numeric' | 'text'
+  placeholder?: string
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
+
+  const commit = () => {
+    setEditing(false)
+    if (draft !== value) onSave(draft)
+  }
+
+  if (editing) {
+    return (
+      <div className="px-3 py-2 flex items-center justify-between gap-2">
+        <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground shrink-0">{label}</span>
+        <input
+          ref={inputRef}
+          type={type}
+          value={draft}
+          onChange={e => setDraft(e.target.value)}
+          onBlur={commit}
+          onKeyDown={e => { if (e.key === 'Enter') commit() }}
+          inputMode={inputMode}
+          placeholder={placeholder}
+          className="text-sm font-mono text-right bg-transparent border-b-2 border-primary outline-none flex-1 min-w-0"
+        />
+      </div>
+    )
+  }
+
+  return (
+    <button
+      onClick={() => { setDraft(value); setEditing(true) }}
+      className="w-full px-3 py-2 flex items-center justify-between active:bg-muted/30 transition-colors"
+    >
+      <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">{label}</span>
+      <span className="text-sm font-mono truncate ml-2">{value || '—'}</span>
+    </button>
+  )
+}
+
 /* ─── Client Detail Modal ───────────────────────────────────────── */
 function ClientDetail({ client, onClose, onUpdate }: {
   client: ClientRow
@@ -254,20 +304,15 @@ function ClientDetail({ client, onClose, onUpdate }: {
   const [loadingData, setLoadingData] = useState(true)
   const [sendingInvoice, setSendingInvoice] = useState<string | null>(null)
   const [sendResult, setSendResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
+  const [toast, setToast] = useState('')
 
-  // ── Edit mode state ──────────────────────────────────────────────
-  const [editing, setEditing] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [editName, setEditName] = useState(client.contact_name ?? '')
-  const [editPhone, setEditPhone] = useState(client.contact_phone ?? '')
-  const [editEmail, setEditEmail] = useState(client.contact_email ?? '')
-  const [editPrice, setEditPrice] = useState(client.quoted_price?.toString() ?? '')
-  const [editReclean, setEditReclean] = useState(client.reclean_due_at?.slice(0, 10) ?? '')
-  // For rescheduling the next job
-  const [editNextDate, setEditNextDate] = useState('')
-  const [editNextTime, setEditNextTime] = useState('')
+  // Job reschedule state
+  const [rescheduleJobId, setRescheduleJobId] = useState<string | null>(null)
+  const [rescheduleDate, setRescheduleDate] = useState('')
+  const [rescheduleTime, setRescheduleTime] = useState('')
+  const [rescheduling, setRescheduling] = useState(false)
 
-  // Load jobs + invoices for this client
+  // Load jobs + invoices
   useEffect(() => {
     let cancelled = false
     ;(async () => {
@@ -286,18 +331,9 @@ function ClientDetail({ client, onClose, onUpdate }: {
           .limit(20),
       ])
       if (cancelled) return
-      const jobData = (jobsRes.data as JobRow[]) ?? []
-      setJobs(jobData)
+      setJobs((jobsRes.data as JobRow[]) ?? [])
       setInvoices((invoicesRes.data as InvoiceRow[]) ?? [])
       setLoadingData(false)
-
-      // Pre-fill next scheduled job date for editing
-      const nextJob = jobData.find(j => j.status === 'scheduled' && j.scheduled_at)
-      if (nextJob?.scheduled_at) {
-        const d = new Date(nextJob.scheduled_at)
-        setEditNextDate(d.toISOString().slice(0, 10))
-        setEditNextTime(d.toTimeString().slice(0, 5))
-      }
     })()
     return () => { cancelled = true }
   }, [supabase, client.id])
@@ -307,90 +343,67 @@ function ClientDetail({ client, onClose, onUpdate }: {
   const phone = client.contact_phone
   const email = client.contact_email
 
-  // ── Save edits ─────────────────────────────────────────────────────
-  const handleSave = useCallback(async () => {
-    setSaving(true)
-    try {
-      // 1. Update house record
-      const updates: Record<string, unknown> = {
-        contact_name: editName || null,
-        contact_phone: editPhone || null,
-        contact_email: editEmail || null,
-        quoted_price: editPrice ? parseFloat(editPrice) : null,
-        reclean_due_at: editReclean ? new Date(editReclean + 'T00:00:00').toISOString() : null,
-      }
+  // ── Save a single field on the house ──────────────────────────────
+  const saveField = useCallback(async (field: string, value: string | number | null) => {
+    await supabase.from('houses').update({ [field]: value }).eq('id', client.id)
+    onUpdate({ id: client.id, [field]: value } as Partial<ClientRow> & { id: string })
+    setToast('Saved')
+    setTimeout(() => setToast(''), 1500)
+  }, [supabase, client.id, onUpdate])
 
-      await supabase.from('houses').update(updates).eq('id', client.id)
+  // ── Reschedule a job ──────────────────────────────────────────────
+  const handleReschedule = useCallback(async (job: JobRow) => {
+    if (!rescheduleDate) return
+    setRescheduling(true)
+    const newDateTime = new Date(`${rescheduleDate}T${rescheduleTime || '10:00'}:00`)
 
-      // 2. If there's a scheduled job and date changed, update the job + calendar
-      const nextJob = jobs.find(j => j.status === 'scheduled' && j.scheduled_at)
-      if (nextJob && editNextDate) {
-        const newDateTime = new Date(`${editNextDate}T${editNextTime || '10:00'}:00`)
-        const oldDateTime = nextJob.scheduled_at ? new Date(nextJob.scheduled_at) : null
+    // Update job in DB
+    await supabase.from('jobs').update({ scheduled_at: newDateTime.toISOString() }).eq('id', job.id)
 
-        const dateChanged = !oldDateTime || newDateTime.getTime() !== oldDateTime.getTime()
+    // Update local state
+    setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_at: newDateTime.toISOString() } : j))
 
-        if (dateChanged) {
-          // Update the job
-          await supabase
-            .from('jobs')
-            .update({ scheduled_at: newDateTime.toISOString() })
-            .eq('id', nextJob.id)
+    // Delete old calendar event + create new one (non-blocking)
+    updateCalendarEvent({
+      houseId: client.id,
+      oldEventId: client.google_calendar_event_id,
+      contactName: name,
+      phone: phone || '',
+      address: addr,
+      price: client.quoted_price ?? 0,
+      date: newDateTime.toISOString(),
+      type: 'job',
+    }).catch(err => console.error('Calendar reschedule failed:', err))
 
-          // Delete old calendar event + create new one
-          updateCalendarEvent({
-            houseId: client.id,
-            oldEventId: client.google_calendar_event_id,
-            contactName: editName || name,
-            phone: editPhone || phone || '',
+    // Send reschedule SMS (non-blocking)
+    if (phone) {
+      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+      supabase.auth.getSession().then(({ data: { session } }) => {
+        if (!session) return
+        fetch(`${supabaseUrl}/functions/v1/send-confirmation-sms`, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            phone,
+            customer_name: name,
+            scheduled_date: newDateTime.toISOString(),
+            price: client.quoted_price,
             address: addr,
-            price: editPrice ? parseFloat(editPrice) : (client.quoted_price ?? 0),
-            date: newDateTime.toISOString(),
-            type: 'job',
-          }).catch(err => console.error('Calendar reschedule failed:', err))
-
-          // Also send a new confirmation SMS if phone exists
-          if (editPhone || phone) {
-            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-            supabase.auth.getSession().then(({ data: { session } }) => {
-              if (!session) return
-              fetch(`${supabaseUrl}/functions/v1/send-confirmation-sms`, {
-                method: 'POST',
-                headers: {
-                  Authorization: `Bearer ${session.access_token}`,
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  phone: editPhone || phone,
-                  customer_name: editName || name,
-                  scheduled_date: newDateTime.toISOString(),
-                  price: editPrice || client.quoted_price,
-                  address: addr,
-                }),
-              }).catch(err => console.error('Reschedule SMS failed:', err))
-            })
-          }
-        }
-      }
-
-      // 3. Update parent state
-      onUpdate({
-        id: client.id,
-        contact_name: editName || null,
-        contact_phone: editPhone || null,
-        contact_email: editEmail || null,
-        quoted_price: editPrice ? parseFloat(editPrice) : null,
-        reclean_due_at: editReclean ? new Date(editReclean + 'T00:00:00').toISOString() : null,
+          }),
+        }).catch(err => console.error('Reschedule SMS failed:', err))
       })
-
-      setEditing(false)
-    } catch (err) {
-      console.error('Save failed:', err)
     }
-    setSaving(false)
-  }, [supabase, client, editName, editPhone, editEmail, editPrice, editReclean, editNextDate, editNextTime, jobs, name, phone, addr, onUpdate])
 
-  // Send invoice via SMS (calls edge function)
+    setRescheduleJobId(null)
+    setRescheduling(false)
+    setToast('Rescheduled')
+    setTimeout(() => setToast(''), 2000)
+  }, [supabase, client, name, phone, addr, rescheduleDate, rescheduleTime])
+
+  // Send invoice via SMS
   const handleSendInvoiceSms = useCallback(async (inv: InvoiceRow) => {
     if (!phone) return
     setSendingInvoice(inv.id)
@@ -404,11 +417,7 @@ function ClientDetail({ client, onClose, onUpdate }: {
           Authorization: `Bearer ${session?.access_token}`,
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          invoice_id: inv.id,
-          phone: phone,
-          customer_name: name,
-        }),
+        body: JSON.stringify({ invoice_id: inv.id, phone, customer_name: name }),
       })
       const data = await res.json()
       if (res.ok && data.success) {
@@ -423,8 +432,6 @@ function ClientDetail({ client, onClose, onUpdate }: {
     setSendingInvoice(null)
   }, [supabase, phone, name])
 
-  const nextJob = jobs.find(j => j.status === 'scheduled' && j.scheduled_at)
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
       <div className="absolute inset-0 bg-foreground/50" />
@@ -438,243 +445,230 @@ function ClientDetail({ client, onClose, onUpdate }: {
             <h2 className="text-sm font-bold truncate">{name}</h2>
             <div className="text-[10px] font-mono text-muted-foreground truncate">{addr}</div>
           </div>
-          <div className="flex items-center gap-2 shrink-0 ml-2">
-            {!editing && (
-              <button
-                onClick={() => setEditing(true)}
-                className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
-              >
-                Edit
-              </button>
-            )}
-            <button onClick={onClose} className="text-muted-foreground font-mono font-bold text-lg leading-none">&times;</button>
-          </div>
+          <button onClick={onClose} className="text-muted-foreground font-mono font-bold text-lg leading-none shrink-0 ml-2">&times;</button>
         </div>
 
+        {/* Toast */}
+        {toast && (
+          <div className="absolute top-14 left-1/2 -translate-x-1/2 z-20 bg-foreground text-background px-4 py-1.5 font-mono font-bold text-xs uppercase tracking-wider">
+            {toast}
+          </div>
+        )}
+
         <div className="p-4 space-y-4">
-          {/* ── Edit Form ──────────────────────────────────────────── */}
-          {editing ? (
-            <div className="space-y-3">
-              <div>
-                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Name</label>
-                <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="field-input mt-1" />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Phone</label>
-                <input type="tel" value={editPhone} onChange={e => setEditPhone(e.target.value)} inputMode="tel" className="field-input mt-1" />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Email</label>
-                <input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} inputMode="email" className="field-input mt-1" />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Quoted Price</label>
-                <input type="number" value={editPrice} onChange={e => setEditPrice(e.target.value)} inputMode="numeric" className="field-input mt-1" placeholder="$" />
-              </div>
-              <div>
-                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Reclean Due</label>
-                <input type="date" value={editReclean} onChange={e => setEditReclean(e.target.value)} className="field-input mt-1" />
-              </div>
-
-              {/* Reschedule next job */}
-              {nextJob && (
-                <div className="border-2 border-primary bg-card p-3 space-y-2">
-                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary">Reschedule Next Job</div>
-                  <div className="text-[10px] font-mono text-muted-foreground">
-                    Currently: {nextJob.scheduled_at ? formatDateFull(nextJob.scheduled_at) : '—'}
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[9px] font-mono font-bold uppercase text-muted-foreground">Date</label>
-                      <input type="date" value={editNextDate} onChange={e => setEditNextDate(e.target.value)} className="field-input mt-1" />
-                    </div>
-                    <div>
-                      <label className="text-[9px] font-mono font-bold uppercase text-muted-foreground">Time</label>
-                      <input type="time" value={editNextTime} onChange={e => setEditNextTime(e.target.value)} className="field-input mt-1" />
-                    </div>
-                  </div>
-                  <div className="text-[9px] font-mono text-muted-foreground">
-                    Old calendar event will be removed and new one created automatically.
-                  </div>
-                </div>
-              )}
-
-              {/* Save / Cancel buttons */}
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => setEditing(false)}
-                  className="flex-1 py-3 border-2 border-foreground bg-card font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex-1 py-3 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform disabled:opacity-50"
-                >
-                  {saving ? 'Saving...' : 'Save'}
-                </button>
-              </div>
+          {/* ── LTV Badge ──────────────────────────────────────────── */}
+          <div className="flex items-center gap-3">
+            <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
+              <div className="text-2xl font-bold font-mono tabular-nums text-primary">${client.lifetime_value?.toLocaleString() ?? 0}</div>
+              <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">LTV</div>
             </div>
-          ) : (
-            <>
-              {/* ── LTV Badge ──────────────────────────────────────────── */}
-              <div className="flex items-center gap-3">
-                <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
-                  <div className="text-2xl font-bold font-mono tabular-nums text-primary">${client.lifetime_value?.toLocaleString() ?? 0}</div>
-                  <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">LTV</div>
-                </div>
-                <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
-                  <div className="text-2xl font-bold font-mono tabular-nums">{client.total_jobs}</div>
-                  <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Jobs</div>
-                </div>
-              </div>
+            <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
+              <div className="text-2xl font-bold font-mono tabular-nums">{client.total_jobs}</div>
+              <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Jobs</div>
+            </div>
+          </div>
 
-              {/* ── Quick Actions ──────────────────────────────────────── */}
-              <div className="grid grid-cols-4 gap-2">
-                {phone && (
-                  <a href={`tel:${phone}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
-                    <span className="text-lg">📞</span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Call</span>
-                  </a>
-                )}
-                {phone && (
-                  <a href={`sms:${phone.replace(/[^0-9+]/g, '')}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
-                    <span className="text-lg">💬</span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Text</span>
-                  </a>
-                )}
-                {email && (
-                  <a href={`mailto:${email}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
-                    <span className="text-lg">📧</span>
-                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Email</span>
-                  </a>
-                )}
-                <a
-                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`}
-                  target="_blank" rel="noreferrer"
-                  className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
-                >
-                  <span className="text-lg">🧭</span>
-                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Navigate</span>
-                </a>
-              </div>
+          {/* ── Quick Actions ──────────────────────────────────────── */}
+          <div className="grid grid-cols-4 gap-2">
+            {phone && (
+              <a href={`tel:${phone}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
+                <span className="text-lg">📞</span>
+                <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Call</span>
+              </a>
+            )}
+            {phone && (
+              <a href={`sms:${phone.replace(/[^0-9+]/g, '')}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
+                <span className="text-lg">💬</span>
+                <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Text</span>
+              </a>
+            )}
+            {email && (
+              <a href={`mailto:${email}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
+                <span className="text-lg">📧</span>
+                <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Email</span>
+              </a>
+            )}
+            <a
+              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`}
+              target="_blank" rel="noreferrer"
+              className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
+            >
+              <span className="text-lg">🧭</span>
+              <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Navigate</span>
+            </a>
+          </div>
 
-              {/* ── Contact Info ───────────────────────────────────────── */}
-              <div className="border-2 border-foreground bg-card divide-y-2 divide-foreground">
-                {phone && (
-                  <div className="px-3 py-2 flex items-center justify-between">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Phone</span>
-                    <span className="text-sm font-mono">{formatE164ForDisplay(phone)}</span>
-                  </div>
-                )}
-                {email && (
-                  <div className="px-3 py-2 flex items-center justify-between">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Email</span>
-                    <span className="text-sm font-mono truncate ml-2">{email}</span>
-                  </div>
-                )}
-                {client.reclean_due_at && (
-                  <div className="px-3 py-2 flex items-center justify-between">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Reclean</span>
-                    <span className="text-sm font-mono">{formatDate(client.reclean_due_at)}</span>
-                  </div>
-                )}
-                {nextJob?.scheduled_at && (
-                  <div className="px-3 py-2 flex items-center justify-between">
-                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Next Job</span>
-                    <span className="text-sm font-mono">{formatDateFull(nextJob.scheduled_at)}</span>
-                  </div>
-                )}
-              </div>
+          {/* ── Contact Info — tap any row to edit ─────────────────── */}
+          <div>
+            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Details — tap to edit</h3>
+            <div className="border-2 border-foreground bg-card divide-y-2 divide-foreground">
+              <EditableField
+                label="Name"
+                value={client.contact_name ?? ''}
+                onSave={v => saveField('contact_name', v || null)}
+              />
+              <EditableField
+                label="Phone"
+                value={client.contact_phone ?? ''}
+                onSave={v => saveField('contact_phone', v || null)}
+                type="tel"
+                inputMode="tel"
+                placeholder="+19495551234"
+              />
+              <EditableField
+                label="Email"
+                value={client.contact_email ?? ''}
+                onSave={v => saveField('contact_email', v || null)}
+                type="email"
+                inputMode="email"
+              />
+              <EditableField
+                label="Price"
+                value={client.quoted_price?.toString() ?? ''}
+                onSave={v => saveField('quoted_price', v ? parseFloat(v) : null)}
+                type="number"
+                inputMode="numeric"
+                placeholder="$0"
+              />
+              <EditableField
+                label="Reclean"
+                value={client.reclean_due_at?.slice(0, 10) ?? ''}
+                onSave={v => saveField('reclean_due_at', v ? new Date(v + 'T00:00:00').toISOString() : null)}
+                type="date"
+              />
+            </div>
+          </div>
 
-              {/* ── Invoices ───────────────────────────────────────────── */}
-              <div>
-                <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Invoices</h3>
-                {loadingData ? (
-                  <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
-                ) : invoices.length === 0 ? (
-                  <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
-                    <p className="text-xs font-mono text-muted-foreground">No invoices yet.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    {invoices.map(inv => (
-                      <div key={inv.id} className="border-2 border-foreground bg-card p-3 relative">
-                        <div className="absolute left-0 top-0 bottom-0 w-1" style={{
-                          background: inv.status === 'paid' ? 'var(--heatmap-5)' : 'var(--destructive)'
-                        }} />
-                        <div className="pl-3">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <span className="text-[10px] font-mono font-bold text-muted-foreground">{inv.invoice_number}</span>
-                              <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border-2 ${
-                                inv.status === 'paid' ? 'border-primary text-primary' : 'border-destructive text-destructive'
-                              }`}>
-                                {inv.status}
-                              </span>
-                            </div>
-                            <span className="text-sm font-bold font-mono tabular-nums">${inv.total.toFixed(2)}</span>
+          {/* ── Jobs — tap to reschedule ────────────────────────────── */}
+          <div>
+            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Jobs — tap to reschedule</h3>
+            {loadingData ? (
+              <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
+            ) : jobs.length === 0 ? (
+              <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
+                <p className="text-xs font-mono text-muted-foreground">No jobs yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {jobs.map(j => (
+                  <div key={j.id} className="border-2 border-foreground bg-card">
+                    <button
+                      onClick={() => {
+                        if (rescheduleJobId === j.id) {
+                          setRescheduleJobId(null)
+                        } else {
+                          setRescheduleJobId(j.id)
+                          if (j.scheduled_at) {
+                            const d = new Date(j.scheduled_at)
+                            setRescheduleDate(d.toISOString().slice(0, 10))
+                            setRescheduleTime(d.toTimeString().slice(0, 5))
+                          } else {
+                            setRescheduleDate('')
+                            setRescheduleTime('10:00')
+                          }
+                        }
+                      }}
+                      className="w-full px-3 py-2 flex items-center justify-between active:bg-muted/30 transition-colors"
+                    >
+                      <div className="flex items-center gap-2">
+                        <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border ${
+                          j.status === 'completed' ? 'border-primary text-primary' :
+                          j.status === 'in_progress' ? 'border-foreground text-foreground bg-muted' :
+                          j.status === 'cancelled' ? 'border-muted-foreground text-muted-foreground' :
+                          'border-foreground text-foreground'
+                        }`}>
+                          {j.status}
+                        </span>
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          {j.scheduled_at ? formatDateFull(j.scheduled_at) : '—'}
+                        </span>
+                      </div>
+                      <span className="text-sm font-bold font-mono tabular-nums">${(j.price ?? 0).toFixed(0)}</span>
+                    </button>
+
+                    {/* Reschedule panel — slides open */}
+                    {rescheduleJobId === j.id && (
+                      <div className="border-t-2 border-foreground px-3 py-3 bg-muted/20 space-y-2">
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="text-[9px] font-mono font-bold uppercase text-muted-foreground">New Date</label>
+                            <input type="date" value={rescheduleDate} onChange={e => setRescheduleDate(e.target.value)} className="field-input mt-1" />
                           </div>
-                          <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                            {formatDate(inv.created_at)}
-                            {inv.sent_at && ` · Sent via ${inv.sent_via || 'sms'}`}
+                          <div>
+                            <label className="text-[9px] font-mono font-bold uppercase text-muted-foreground">New Time</label>
+                            <input type="time" value={rescheduleTime} onChange={e => setRescheduleTime(e.target.value)} className="field-input mt-1" />
                           </div>
-                          {inv.status !== 'paid' && phone && (
-                            <button
-                              onClick={() => handleSendInvoiceSms(inv)}
-                              disabled={sendingInvoice === inv.id}
-                              className="mt-2 w-full press-brutal py-2 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider disabled:opacity-50"
-                            >
-                              {sendingInvoice === inv.id ? 'Sending...' : inv.sent_at ? 'Resend SMS' : 'Send Invoice SMS'}
-                            </button>
-                          )}
-                          {sendResult?.id === inv.id && (
-                            <div className={`text-[10px] font-mono font-bold mt-1 ${sendResult.ok ? 'text-primary' : 'text-destructive'}`}>
-                              {sendResult.msg}
-                            </div>
-                          )}
+                        </div>
+                        <button
+                          onClick={() => handleReschedule(j)}
+                          disabled={rescheduling || !rescheduleDate}
+                          className="w-full py-2.5 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform disabled:opacity-50"
+                        >
+                          {rescheduling ? 'Saving...' : 'Reschedule + Update Calendar'}
+                        </button>
+                        <div className="text-[9px] font-mono text-muted-foreground text-center">
+                          Removes old event, creates new one, sends SMS
                         </div>
                       </div>
-                    ))}
+                    )}
                   </div>
-                )}
+                ))}
               </div>
+            )}
+          </div>
 
-              {/* ── Job History ─────────────────────────────────────────── */}
-              <div>
-                <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Job History</h3>
-                {loadingData ? (
-                  <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
-                ) : jobs.length === 0 ? (
-                  <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
-                    <p className="text-xs font-mono text-muted-foreground">No jobs yet.</p>
-                  </div>
-                ) : (
-                  <div className="space-y-1">
-                    {jobs.map(j => (
-                      <div key={j.id} className="border-2 border-foreground bg-card px-3 py-2 flex items-center justify-between">
-                        <div>
-                          <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border ${
-                            j.status === 'completed' ? 'border-primary text-primary' :
-                            j.status === 'in_progress' ? 'border-foreground text-foreground bg-muted' :
-                            j.status === 'cancelled' ? 'border-muted-foreground text-muted-foreground' :
-                            'border-foreground text-foreground'
+          {/* ── Invoices ───────────────────────────────────────────── */}
+          <div>
+            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Invoices</h3>
+            {loadingData ? (
+              <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
+            ) : invoices.length === 0 ? (
+              <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
+                <p className="text-xs font-mono text-muted-foreground">No invoices yet.</p>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {invoices.map(inv => (
+                  <div key={inv.id} className="border-2 border-foreground bg-card p-3 relative">
+                    <div className="absolute left-0 top-0 bottom-0 w-1" style={{
+                      background: inv.status === 'paid' ? 'var(--heatmap-5)' : 'var(--destructive)'
+                    }} />
+                    <div className="pl-3">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] font-mono font-bold text-muted-foreground">{inv.invoice_number}</span>
+                          <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border-2 ${
+                            inv.status === 'paid' ? 'border-primary text-primary' : 'border-destructive text-destructive'
                           }`}>
-                            {j.status}
-                          </span>
-                          <span className="text-[10px] font-mono text-muted-foreground ml-2">
-                            {j.scheduled_at ? formatDateFull(j.scheduled_at) : '—'}
+                            {inv.status}
                           </span>
                         </div>
-                        <span className="text-sm font-bold font-mono tabular-nums">${(j.price ?? 0).toFixed(0)}</span>
+                        <span className="text-sm font-bold font-mono tabular-nums">${inv.total.toFixed(2)}</span>
                       </div>
-                    ))}
+                      <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                        {formatDate(inv.created_at)}
+                        {inv.sent_at && ` · Sent via ${inv.sent_via || 'sms'}`}
+                      </div>
+                      {inv.status !== 'paid' && phone && (
+                        <button
+                          onClick={() => handleSendInvoiceSms(inv)}
+                          disabled={sendingInvoice === inv.id}
+                          className="mt-2 w-full press-brutal py-2 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider disabled:opacity-50"
+                        >
+                          {sendingInvoice === inv.id ? 'Sending...' : inv.sent_at ? 'Resend SMS' : 'Send Invoice SMS'}
+                        </button>
+                      )}
+                      {sendResult?.id === inv.id && (
+                        <div className={`text-[10px] font-mono font-bold mt-1 ${sendResult.ok ? 'text-primary' : 'text-destructive'}`}>
+                          {sendResult.msg}
+                        </div>
+                      )}
+                    </div>
                   </div>
-                )}
+                ))}
               </div>
-            </>
-          )}
+            )}
+          </div>
         </div>
       </div>
     </div>
