@@ -54,6 +54,61 @@ export async function isCalendarConnected(): Promise<boolean> {
   return !!data
 }
 
+// ── Update/replace a calendar event (delete old + create new) ────────
+
+interface UpdateCalendarEventInput {
+  houseId: string
+  oldEventId: string | null
+  contactName: string
+  phone: string
+  address: string
+  price: number
+  date: string          // ISO string
+  type: 'job' | 'follow_up'
+}
+
+export async function updateCalendarEvent(input: UpdateCalendarEventInput): Promise<{ eventId: string } | null> {
+  const supabase = createClient()
+  const { data: { session } } = await supabase.auth.getSession()
+  if (!session) return null
+
+  const connected = await isCalendarConnected()
+  if (!connected) return null
+
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/functions/v1/update-calendar-event`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          house_id: input.houseId,
+          old_event_id: input.oldEventId,
+          contact_name: input.contactName,
+          phone: input.phone,
+          address: input.address,
+          price: input.price,
+          date: input.date,
+          type: input.type,
+        }),
+      }
+    )
+
+    const data = await res.json()
+    if (data.error) {
+      console.error('Calendar update failed:', data.error)
+      return null
+    }
+    return { eventId: data.event_id }
+  } catch (err) {
+    console.error('Calendar update error:', err)
+    return null
+  }
+}
+
 // ── Create a calendar event ──────────────────────────────────────────
 // Called automatically after the capture flow saves a date.
 

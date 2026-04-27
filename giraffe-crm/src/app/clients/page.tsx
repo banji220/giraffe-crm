@@ -14,6 +14,7 @@ import AuthGate from '@/components/auth/AuthGate'
 import BottomNav from '@/components/nav/BottomNav'
 import { createClient } from '@/lib/supabase/client'
 import { formatE164ForDisplay } from '@/lib/phone'
+import { updateCalendarEvent } from '@/lib/google-calendar'
 
 type ClientRow = {
   id: string
@@ -25,6 +26,9 @@ type ClientRow = {
   lifetime_value: number
   total_jobs: number
   reclean_due_at: string | null
+  next_follow_up_at: string | null
+  google_calendar_event_id: string | null
+  status: string | null
   updated_at: string
   created_at: string
   tags: string[]
@@ -68,7 +72,7 @@ function ClientsInner() {
   useEffect(() => {
     supabase
       .from('houses')
-      .select('id, full_address, contact_name, contact_phone, contact_email, quoted_price, lifetime_value, total_jobs, reclean_due_at, updated_at, created_at, tags')
+      .select('id, full_address, contact_name, contact_phone, contact_email, quoted_price, lifetime_value, total_jobs, reclean_due_at, next_follow_up_at, google_calendar_event_id, status, updated_at, created_at, tags')
       .eq('status', 'customer')
       .order('lifetime_value', { ascending: false })
       .then(({ data }) => {
@@ -196,6 +200,10 @@ function ClientsInner() {
         <ClientDetail
           client={selectedClient}
           onClose={() => setSelectedClient(null)}
+          onUpdate={(updated) => {
+            setClients(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c))
+            setSelectedClient(prev => prev ? { ...prev, ...updated } : null)
+          }}
         />
       )}
 
@@ -235,13 +243,29 @@ function ClientCard({ client: c, onTap }: { client: ClientRow; onTap: () => void
 }
 
 /* ─── Client Detail Modal ───────────────────────────────────────── */
-function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => void }) {
+function ClientDetail({ client, onClose, onUpdate }: {
+  client: ClientRow
+  onClose: () => void
+  onUpdate: (updated: Partial<ClientRow> & { id: string }) => void
+}) {
   const supabase = useRef(createClient()).current
   const [jobs, setJobs] = useState<JobRow[]>([])
   const [invoices, setInvoices] = useState<InvoiceRow[]>([])
   const [loadingData, setLoadingData] = useState(true)
   const [sendingInvoice, setSendingInvoice] = useState<string | null>(null)
   const [sendResult, setSendResult] = useState<{ id: string; ok: boolean; msg: string } | null>(null)
+
+  // ── Edit mode state ──────────────────────────────────────────────
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [editName, setEditName] = useState(client.contact_name ?? '')
+  const [editPhone, setEditPhone] = useState(client.contact_phone ?? '')
+  const [editEmail, setEditEmail] = useState(client.contact_email ?? '')
+  const [editPrice, setEditPrice] = useState(client.quoted_price?.toString() ?? '')
+  const [editReclean, setEditReclean] = useState(client.reclean_due_at?.slice(0, 10) ?? '')
+  // For rescheduling the next job
+  const [editNextDate, setEditNextDate] = useState('')
+  const [editNextTime, setEditNextTime] = useState('')
 
   // Load jobs + invoices for this client
   useEffect(() => {
@@ -262,9 +286,18 @@ function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => v
           .limit(20),
       ])
       if (cancelled) return
-      setJobs((jobsRes.data as JobRow[]) ?? [])
+      const jobData = (jobsRes.data as JobRow[]) ?? []
+      setJobs(jobData)
       setInvoices((invoicesRes.data as InvoiceRow[]) ?? [])
       setLoadingData(false)
+
+      // Pre-fill next scheduled job date for editing
+      const nextJob = jobData.find(j => j.status === 'scheduled' && j.scheduled_at)
+      if (nextJob?.scheduled_at) {
+        const d = new Date(nextJob.scheduled_at)
+        setEditNextDate(d.toISOString().slice(0, 10))
+        setEditNextTime(d.toTimeString().slice(0, 5))
+      }
     })()
     return () => { cancelled = true }
   }, [supabase, client.id])
@@ -273,7 +306,89 @@ function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => v
   const name = client.contact_name?.trim() || 'Unknown'
   const phone = client.contact_phone
   const email = client.contact_email
-  const unpaidInvoices = invoices.filter(i => i.status !== 'paid' && i.status !== 'void')
+
+  // ── Save edits ─────────────────────────────────────────────────────
+  const handleSave = useCallback(async () => {
+    setSaving(true)
+    try {
+      // 1. Update house record
+      const updates: Record<string, unknown> = {
+        contact_name: editName || null,
+        contact_phone: editPhone || null,
+        contact_email: editEmail || null,
+        quoted_price: editPrice ? parseFloat(editPrice) : null,
+        reclean_due_at: editReclean ? new Date(editReclean + 'T00:00:00').toISOString() : null,
+      }
+
+      await supabase.from('houses').update(updates).eq('id', client.id)
+
+      // 2. If there's a scheduled job and date changed, update the job + calendar
+      const nextJob = jobs.find(j => j.status === 'scheduled' && j.scheduled_at)
+      if (nextJob && editNextDate) {
+        const newDateTime = new Date(`${editNextDate}T${editNextTime || '10:00'}:00`)
+        const oldDateTime = nextJob.scheduled_at ? new Date(nextJob.scheduled_at) : null
+
+        const dateChanged = !oldDateTime || newDateTime.getTime() !== oldDateTime.getTime()
+
+        if (dateChanged) {
+          // Update the job
+          await supabase
+            .from('jobs')
+            .update({ scheduled_at: newDateTime.toISOString() })
+            .eq('id', nextJob.id)
+
+          // Delete old calendar event + create new one
+          updateCalendarEvent({
+            houseId: client.id,
+            oldEventId: client.google_calendar_event_id,
+            contactName: editName || name,
+            phone: editPhone || phone || '',
+            address: addr,
+            price: editPrice ? parseFloat(editPrice) : (client.quoted_price ?? 0),
+            date: newDateTime.toISOString(),
+            type: 'job',
+          }).catch(err => console.error('Calendar reschedule failed:', err))
+
+          // Also send a new confirmation SMS if phone exists
+          if (editPhone || phone) {
+            const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
+            supabase.auth.getSession().then(({ data: { session } }) => {
+              if (!session) return
+              fetch(`${supabaseUrl}/functions/v1/send-confirmation-sms`, {
+                method: 'POST',
+                headers: {
+                  Authorization: `Bearer ${session.access_token}`,
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  phone: editPhone || phone,
+                  customer_name: editName || name,
+                  scheduled_date: newDateTime.toISOString(),
+                  price: editPrice || client.quoted_price,
+                  address: addr,
+                }),
+              }).catch(err => console.error('Reschedule SMS failed:', err))
+            })
+          }
+        }
+      }
+
+      // 3. Update parent state
+      onUpdate({
+        id: client.id,
+        contact_name: editName || null,
+        contact_phone: editPhone || null,
+        contact_email: editEmail || null,
+        quoted_price: editPrice ? parseFloat(editPrice) : null,
+        reclean_due_at: editReclean ? new Date(editReclean + 'T00:00:00').toISOString() : null,
+      })
+
+      setEditing(false)
+    } catch (err) {
+      console.error('Save failed:', err)
+    }
+    setSaving(false)
+  }, [supabase, client, editName, editPhone, editEmail, editPrice, editReclean, editNextDate, editNextTime, jobs, name, phone, addr, onUpdate])
 
   // Send invoice via SMS (calls edge function)
   const handleSendInvoiceSms = useCallback(async (inv: InvoiceRow) => {
@@ -298,7 +413,6 @@ function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => v
       const data = await res.json()
       if (res.ok && data.success) {
         setSendResult({ id: inv.id, ok: true, msg: 'Sent!' })
-        // Update invoice sent_at locally
         setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, sent_at: new Date().toISOString(), sent_via: 'sms' } : i))
       } else {
         setSendResult({ id: inv.id, ok: false, msg: data.error || 'Failed' })
@@ -308,6 +422,8 @@ function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => v
     }
     setSendingInvoice(null)
   }, [supabase, phone, name])
+
+  const nextJob = jobs.find(j => j.status === 'scheduled' && j.scheduled_at)
 
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center" onClick={onClose}>
@@ -322,175 +438,243 @@ function ClientDetail({ client, onClose }: { client: ClientRow; onClose: () => v
             <h2 className="text-sm font-bold truncate">{name}</h2>
             <div className="text-[10px] font-mono text-muted-foreground truncate">{addr}</div>
           </div>
-          <button onClick={onClose} className="text-muted-foreground font-mono font-bold text-lg leading-none shrink-0 ml-2">&times;</button>
+          <div className="flex items-center gap-2 shrink-0 ml-2">
+            {!editing && (
+              <button
+                onClick={() => setEditing(true)}
+                className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-1 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
+              >
+                Edit
+              </button>
+            )}
+            <button onClick={onClose} className="text-muted-foreground font-mono font-bold text-lg leading-none">&times;</button>
+          </div>
         </div>
 
         <div className="p-4 space-y-4">
-          {/* ── LTV Badge ──────────────────────────────────────────── */}
-          <div className="flex items-center gap-3">
-            <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
-              <div className="text-2xl font-bold font-mono tabular-nums text-primary">${client.lifetime_value?.toLocaleString() ?? 0}</div>
-              <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">LTV</div>
+          {/* ── Edit Form ──────────────────────────────────────────── */}
+          {editing ? (
+            <div className="space-y-3">
+              <div>
+                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Name</label>
+                <input type="text" value={editName} onChange={e => setEditName(e.target.value)} className="field-input mt-1" />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Phone</label>
+                <input type="tel" value={editPhone} onChange={e => setEditPhone(e.target.value)} inputMode="tel" className="field-input mt-1" />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Email</label>
+                <input type="email" value={editEmail} onChange={e => setEditEmail(e.target.value)} inputMode="email" className="field-input mt-1" />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Quoted Price</label>
+                <input type="number" value={editPrice} onChange={e => setEditPrice(e.target.value)} inputMode="numeric" className="field-input mt-1" placeholder="$" />
+              </div>
+              <div>
+                <label className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Reclean Due</label>
+                <input type="date" value={editReclean} onChange={e => setEditReclean(e.target.value)} className="field-input mt-1" />
+              </div>
+
+              {/* Reschedule next job */}
+              {nextJob && (
+                <div className="border-2 border-primary bg-card p-3 space-y-2">
+                  <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-primary">Reschedule Next Job</div>
+                  <div className="text-[10px] font-mono text-muted-foreground">
+                    Currently: {nextJob.scheduled_at ? formatDateFull(nextJob.scheduled_at) : '—'}
+                  </div>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[9px] font-mono font-bold uppercase text-muted-foreground">Date</label>
+                      <input type="date" value={editNextDate} onChange={e => setEditNextDate(e.target.value)} className="field-input mt-1" />
+                    </div>
+                    <div>
+                      <label className="text-[9px] font-mono font-bold uppercase text-muted-foreground">Time</label>
+                      <input type="time" value={editNextTime} onChange={e => setEditNextTime(e.target.value)} className="field-input mt-1" />
+                    </div>
+                  </div>
+                  <div className="text-[9px] font-mono text-muted-foreground">
+                    Old calendar event will be removed and new one created automatically.
+                  </div>
+                </div>
+              )}
+
+              {/* Save / Cancel buttons */}
+              <div className="flex gap-2 pt-1">
+                <button
+                  onClick={() => setEditing(false)}
+                  className="flex-1 py-3 border-2 border-foreground bg-card font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSave}
+                  disabled={saving}
+                  className="flex-1 py-3 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform disabled:opacity-50"
+                >
+                  {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
             </div>
-            <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
-              <div className="text-2xl font-bold font-mono tabular-nums">{client.total_jobs}</div>
-              <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Jobs</div>
-            </div>
-          </div>
+          ) : (
+            <>
+              {/* ── LTV Badge ──────────────────────────────────────────── */}
+              <div className="flex items-center gap-3">
+                <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
+                  <div className="text-2xl font-bold font-mono tabular-nums text-primary">${client.lifetime_value?.toLocaleString() ?? 0}</div>
+                  <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">LTV</div>
+                </div>
+                <div className="border-2 border-foreground bg-card px-3 py-2 text-center flex-1">
+                  <div className="text-2xl font-bold font-mono tabular-nums">{client.total_jobs}</div>
+                  <div className="text-[9px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Jobs</div>
+                </div>
+              </div>
 
-          {/* ── Quick Actions ──────────────────────────────────────── */}
-          <div className="grid grid-cols-4 gap-2">
-            {phone && (
-              <a
-                href={`tel:${phone}`}
-                className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
-              >
-                <span className="text-lg">📞</span>
-                <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Call</span>
-              </a>
-            )}
-            {phone && (
-              <a
-                href={`sms:${phone.replace(/[^0-9+]/g, '')}`}
-                className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
-              >
-                <span className="text-lg">💬</span>
-                <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Text</span>
-              </a>
-            )}
-            {email && (
-              <a
-                href={`mailto:${email}`}
-                className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
-              >
-                <span className="text-lg">📧</span>
-                <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Email</span>
-              </a>
-            )}
-            <a
-              href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`}
-              target="_blank"
-              rel="noreferrer"
-              className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
-            >
-              <span className="text-lg">🧭</span>
-              <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Navigate</span>
-            </a>
-          </div>
+              {/* ── Quick Actions ──────────────────────────────────────── */}
+              <div className="grid grid-cols-4 gap-2">
+                {phone && (
+                  <a href={`tel:${phone}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
+                    <span className="text-lg">📞</span>
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Call</span>
+                  </a>
+                )}
+                {phone && (
+                  <a href={`sms:${phone.replace(/[^0-9+]/g, '')}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
+                    <span className="text-lg">💬</span>
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Text</span>
+                  </a>
+                )}
+                {email && (
+                  <a href={`mailto:${email}`} className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform">
+                    <span className="text-lg">📧</span>
+                    <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Email</span>
+                  </a>
+                )}
+                <a
+                  href={`https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(addr)}`}
+                  target="_blank" rel="noreferrer"
+                  className="flex flex-col items-center gap-1 py-3 border-2 border-foreground bg-card active:translate-y-[1px] transition-transform"
+                >
+                  <span className="text-lg">🧭</span>
+                  <span className="text-[9px] font-mono font-bold uppercase tracking-wider">Navigate</span>
+                </a>
+              </div>
 
-          {/* ── Contact Info ───────────────────────────────────────── */}
-          <div className="border-2 border-foreground bg-card divide-y-2 divide-foreground">
-            {phone && (
-              <div className="px-3 py-2 flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Phone</span>
-                <span className="text-sm font-mono">{formatE164ForDisplay(phone)}</span>
+              {/* ── Contact Info ───────────────────────────────────────── */}
+              <div className="border-2 border-foreground bg-card divide-y-2 divide-foreground">
+                {phone && (
+                  <div className="px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Phone</span>
+                    <span className="text-sm font-mono">{formatE164ForDisplay(phone)}</span>
+                  </div>
+                )}
+                {email && (
+                  <div className="px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Email</span>
+                    <span className="text-sm font-mono truncate ml-2">{email}</span>
+                  </div>
+                )}
+                {client.reclean_due_at && (
+                  <div className="px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Reclean</span>
+                    <span className="text-sm font-mono">{formatDate(client.reclean_due_at)}</span>
+                  </div>
+                )}
+                {nextJob?.scheduled_at && (
+                  <div className="px-3 py-2 flex items-center justify-between">
+                    <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Next Job</span>
+                    <span className="text-sm font-mono">{formatDateFull(nextJob.scheduled_at)}</span>
+                  </div>
+                )}
               </div>
-            )}
-            {email && (
-              <div className="px-3 py-2 flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Email</span>
-                <span className="text-sm font-mono truncate ml-2">{email}</span>
-              </div>
-            )}
-            {client.reclean_due_at && (
-              <div className="px-3 py-2 flex items-center justify-between">
-                <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Reclean</span>
-                <span className="text-sm font-mono">{formatDate(client.reclean_due_at)}</span>
-              </div>
-            )}
-          </div>
 
-          {/* ── Invoices ───────────────────────────────────────────── */}
-          <div>
-            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Invoices</h3>
-            {loadingData ? (
-              <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
-            ) : invoices.length === 0 ? (
-              <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
-                <p className="text-xs font-mono text-muted-foreground">No invoices yet.</p>
+              {/* ── Invoices ───────────────────────────────────────────── */}
+              <div>
+                <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Invoices</h3>
+                {loadingData ? (
+                  <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
+                ) : invoices.length === 0 ? (
+                  <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
+                    <p className="text-xs font-mono text-muted-foreground">No invoices yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {invoices.map(inv => (
+                      <div key={inv.id} className="border-2 border-foreground bg-card p-3 relative">
+                        <div className="absolute left-0 top-0 bottom-0 w-1" style={{
+                          background: inv.status === 'paid' ? 'var(--heatmap-5)' : 'var(--destructive)'
+                        }} />
+                        <div className="pl-3">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono font-bold text-muted-foreground">{inv.invoice_number}</span>
+                              <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border-2 ${
+                                inv.status === 'paid' ? 'border-primary text-primary' : 'border-destructive text-destructive'
+                              }`}>
+                                {inv.status}
+                              </span>
+                            </div>
+                            <span className="text-sm font-bold font-mono tabular-nums">${inv.total.toFixed(2)}</span>
+                          </div>
+                          <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
+                            {formatDate(inv.created_at)}
+                            {inv.sent_at && ` · Sent via ${inv.sent_via || 'sms'}`}
+                          </div>
+                          {inv.status !== 'paid' && phone && (
+                            <button
+                              onClick={() => handleSendInvoiceSms(inv)}
+                              disabled={sendingInvoice === inv.id}
+                              className="mt-2 w-full press-brutal py-2 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider disabled:opacity-50"
+                            >
+                              {sendingInvoice === inv.id ? 'Sending...' : inv.sent_at ? 'Resend SMS' : 'Send Invoice SMS'}
+                            </button>
+                          )}
+                          {sendResult?.id === inv.id && (
+                            <div className={`text-[10px] font-mono font-bold mt-1 ${sendResult.ok ? 'text-primary' : 'text-destructive'}`}>
+                              {sendResult.msg}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="space-y-2">
-                {invoices.map(inv => (
-                  <div key={inv.id} className="border-2 border-foreground bg-card p-3 relative">
-                    <div className="absolute left-0 top-0 bottom-0 w-1" style={{
-                      background: inv.status === 'paid' ? 'var(--heatmap-5)' : 'var(--destructive)'
-                    }} />
-                    <div className="pl-3">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <span className="text-[10px] font-mono font-bold text-muted-foreground">{inv.invoice_number}</span>
-                          <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border-2 ${
-                            inv.status === 'paid' ? 'border-primary text-primary' : 'border-destructive text-destructive'
+
+              {/* ── Job History ─────────────────────────────────────────── */}
+              <div>
+                <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Job History</h3>
+                {loadingData ? (
+                  <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
+                ) : jobs.length === 0 ? (
+                  <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
+                    <p className="text-xs font-mono text-muted-foreground">No jobs yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    {jobs.map(j => (
+                      <div key={j.id} className="border-2 border-foreground bg-card px-3 py-2 flex items-center justify-between">
+                        <div>
+                          <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border ${
+                            j.status === 'completed' ? 'border-primary text-primary' :
+                            j.status === 'in_progress' ? 'border-foreground text-foreground bg-muted' :
+                            j.status === 'cancelled' ? 'border-muted-foreground text-muted-foreground' :
+                            'border-foreground text-foreground'
                           }`}>
-                            {inv.status}
+                            {j.status}
+                          </span>
+                          <span className="text-[10px] font-mono text-muted-foreground ml-2">
+                            {j.scheduled_at ? formatDateFull(j.scheduled_at) : '—'}
                           </span>
                         </div>
-                        <span className="text-sm font-bold font-mono tabular-nums">${inv.total.toFixed(2)}</span>
+                        <span className="text-sm font-bold font-mono tabular-nums">${(j.price ?? 0).toFixed(0)}</span>
                       </div>
-                      <div className="text-[10px] font-mono text-muted-foreground mt-0.5">
-                        {formatDate(inv.created_at)}
-                        {inv.sent_at && ` · Sent via ${inv.sent_via || 'sms'}`}
-                      </div>
-
-                      {/* Send invoice button — only for unpaid, if customer has phone */}
-                      {inv.status !== 'paid' && phone && (
-                        <button
-                          onClick={() => handleSendInvoiceSms(inv)}
-                          disabled={sendingInvoice === inv.id}
-                          className="mt-2 w-full press-brutal py-2 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider disabled:opacity-50"
-                        >
-                          {sendingInvoice === inv.id
-                            ? 'Sending...'
-                            : inv.sent_at
-                            ? 'Resend SMS'
-                            : 'Send Invoice SMS'}
-                        </button>
-                      )}
-                      {sendResult?.id === inv.id && (
-                        <div className={`text-[10px] font-mono font-bold mt-1 ${sendResult.ok ? 'text-primary' : 'text-destructive'}`}>
-                          {sendResult.msg}
-                        </div>
-                      )}
-                    </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
-
-          {/* ── Job History ─────────────────────────────────────────── */}
-          <div>
-            <h3 className="text-[10px] font-mono font-bold uppercase tracking-[0.2em] text-muted-foreground mb-2">Job History</h3>
-            {loadingData ? (
-              <div className="text-xs font-mono text-muted-foreground py-2">Loading...</div>
-            ) : jobs.length === 0 ? (
-              <div className="border-2 border-foreground bg-card px-3 py-3 text-center">
-                <p className="text-xs font-mono text-muted-foreground">No jobs yet.</p>
-              </div>
-            ) : (
-              <div className="space-y-1">
-                {jobs.map(j => (
-                  <div key={j.id} className="border-2 border-foreground bg-card px-3 py-2 flex items-center justify-between">
-                    <div>
-                      <span className={`text-[10px] font-mono font-bold uppercase px-1.5 py-0.5 border ${
-                        j.status === 'completed' ? 'border-primary text-primary' :
-                        j.status === 'in_progress' ? 'border-foreground text-foreground bg-muted' :
-                        j.status === 'cancelled' ? 'border-muted-foreground text-muted-foreground' :
-                        'border-foreground text-foreground'
-                      }`}>
-                        {j.status}
-                      </span>
-                      <span className="text-[10px] font-mono text-muted-foreground ml-2">
-                        {j.scheduled_at ? formatDateFull(j.scheduled_at) : '—'}
-                      </span>
-                    </div>
-                    <span className="text-sm font-bold font-mono tabular-nums">${(j.price ?? 0).toFixed(0)}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            </>
+          )}
         </div>
       </div>
     </div>
