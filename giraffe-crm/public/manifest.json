@@ -2,7 +2,7 @@
   "name": "Giraffe CRM",
   "short_name": "Giraffe",
   "description": "Field sales + service OS for window cleaning",
-  "start_url": "/map",
+  "start_url": "/me",
   "display": "standalone",
   "background_color": "#F5F0E8",
   "theme_color": "#8B5E2A",

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * Root — redirects to /today (the real home). AuthGate on /today handles
+ * Root — redirects to /me (the operator cockpit). AuthGate on /me handles
  * the signed-out case by bouncing to /login.
  */
 
@@ -12,7 +12,7 @@ export default function RootRedirect() {
   const router = useRouter()
 
   useEffect(() => {
-    router.replace('/today')
+    router.replace('/me')
   }, [router])
 
   return (
