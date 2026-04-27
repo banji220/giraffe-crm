@@ -70,8 +70,11 @@ export default function DailyMission({ doorsToday, target, suggestion, onTargetC
         </span>
       </div>
 
-      {/* Progress bar */}
-      <div className="relative h-6 w-full bg-muted border-2 border-foreground overflow-hidden">
+      {/* Progress bar — tap to edit target */}
+      <button
+        onClick={startEdit}
+        className="relative h-6 w-full bg-muted border-2 border-foreground overflow-hidden active:translate-y-[1px] transition-transform"
+      >
         <div
           className="absolute inset-y-0 left-0 transition-[width] duration-300 ease-out"
           style={{ width: `${pct}%`, background: fill }}
@@ -79,34 +82,40 @@ export default function DailyMission({ doorsToday, target, suggestion, onTargetC
         />
         <div className="absolute inset-0 flex items-center justify-center font-mono font-bold text-xs tabular-nums text-foreground mix-blend-difference">
           <span className="text-background">
-            {doorsToday} /{' '}
-            {editing ? (
-              <input
-                ref={inputRef}
-                type="number"
-                min={1}
-                max={999}
-                value={draft}
-                onChange={e => setDraft(e.target.value)}
-                onBlur={commitEdit}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') commitEdit()
-                  if (e.key === 'Escape') setEditing(false)
-                }}
-                className="w-12 bg-transparent border-b border-current text-xs font-mono font-bold tabular-nums outline-none text-inherit px-0 py-0 text-center appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
-              />
-            ) : (
-              <button onClick={startEdit} className="border-b border-dashed border-current">
-                {target}
-              </button>
-            )}{' '}
-            doors
+            {doorsToday} / {target} doors
           </span>
         </div>
-      </div>
+      </button>
 
-      {!editing && (
-        <p className="mt-1 text-[9px] font-mono text-muted-foreground text-center">Tap target to edit</p>
+      {/* Edit target — opens below the bar */}
+      {editing ? (
+        <div className="mt-2 flex items-center gap-2">
+          <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground shrink-0">Daily target:</span>
+          <input
+            ref={inputRef}
+            type="number"
+            inputMode="numeric"
+            pattern="[0-9]*"
+            min={1}
+            max={999}
+            value={draft}
+            onChange={e => setDraft(e.target.value)}
+            onBlur={commitEdit}
+            onKeyDown={e => {
+              if (e.key === 'Enter') commitEdit()
+              if (e.key === 'Escape') setEditing(false)
+            }}
+            className="flex-1 text-center text-lg font-bold font-mono border-2 border-foreground py-1.5 bg-background text-foreground outline-none appearance-none [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+          />
+          <button
+            onClick={commitEdit}
+            className="px-3 py-1.5 border-2 border-foreground bg-foreground text-background font-mono font-bold text-[10px] uppercase tracking-wider active:translate-y-[1px] transition-transform"
+          >
+            Set
+          </button>
+        </div>
+      ) : (
+        <p className="mt-1 text-[9px] font-mono text-muted-foreground text-center">Tap bar to change target</p>
       )}
 
       {suggestion && (

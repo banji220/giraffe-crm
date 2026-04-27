@@ -70,6 +70,8 @@ function WeeklyGoalImpl({ doorsThisWeek, weeklyTarget, onTargetChange }: WeeklyG
             <input
               ref={inputRef}
               type="number"
+              inputMode="numeric"
+              pattern="[0-9]*"
               min={1}
               max={9999}
               value={draft}
