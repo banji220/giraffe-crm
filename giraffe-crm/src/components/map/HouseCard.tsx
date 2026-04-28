@@ -383,6 +383,11 @@ export default function HouseCard({
                   {houseData.contact_email}
                 </a>
               )}
+              {house.lastKnockAt && (
+                <p className="text-xs text-gray-400 mt-1 font-medium">
+                  Last knocked: {timeAgo(house.lastKnockAt)} · {new Date(house.lastKnockAt).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                </p>
+              )}
             </div>
           </div>
         </div>

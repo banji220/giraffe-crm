@@ -54,7 +54,9 @@ function getSuggestion(doors: number, target: number): string {
 function MeInner() {
   const router = useRouter()
   const supabase = useRef(createClient()).current
-  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  // Recompute today's key on every render so midnight crossover works
+  const todayKey = new Date().toISOString().slice(0, 10)
+  const [refreshTick, setRefreshTick] = useState(0)
 
   // Knock tracker
   const [doorsToday, setDoorsToday] = useState(0)
@@ -120,7 +122,18 @@ function MeInner() {
         setCalConnected(calStatus as boolean)
       })
     })
-  }, [supabase, todayKey])
+  }, [supabase, todayKey, refreshTick])
+
+  // Refresh data when page becomes visible (user switches back from Map/other tabs)
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        setRefreshTick(t => t + 1)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => document.removeEventListener('visibilitychange', handleVisibility)
+  }, [])
 
   // Convert raw Supabase stats → DayRecord[] for heatmap, streak, momentum
   const dayRecords: DayRecord[] = useMemo(() => {
