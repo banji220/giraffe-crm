@@ -357,17 +357,25 @@ function ClientDetail({ client, onClose, onUpdate }: {
     // Update local state
     setJobs(prev => prev.map(j => j.id === job.id ? { ...j, scheduled_at: newDateTime.toISOString() } : j))
 
-    // Delete old calendar event + create new one (non-blocking)
-    updateCalendarEvent({
-      houseId: client.id,
-      oldEventId: client.google_calendar_event_id,
-      contactName: name,
-      phone: phone || '',
-      address: addr,
-      price: client.quoted_price ?? 0,
-      date: newDateTime.toISOString(),
-      type: 'job',
-    }).catch(err => console.error('Calendar reschedule failed:', err))
+    // Delete old calendar event + create new one — AWAIT so we get the new event ID
+    try {
+      const calResult = await updateCalendarEvent({
+        houseId: client.id,
+        oldEventId: client.google_calendar_event_id,
+        contactName: name,
+        phone: phone || '',
+        address: addr,
+        price: client.quoted_price ?? 0,
+        date: newDateTime.toISOString(),
+        type: 'job',
+      })
+      // Update parent state with new event ID so next reschedule deletes the right event
+      if (calResult?.eventId) {
+        onUpdate({ id: client.id, google_calendar_event_id: calResult.eventId } as Partial<ClientRow> & { id: string })
+      }
+    } catch (err) {
+      console.error('Calendar reschedule failed:', err)
+    }
 
     // Send reschedule SMS (non-blocking)
     if (phone) {
@@ -395,7 +403,7 @@ function ClientDetail({ client, onClose, onUpdate }: {
     setRescheduling(false)
     setToast('Rescheduled')
     setTimeout(() => setToast(''), 2000)
-  }, [supabase, client, name, phone, addr, rescheduleDate, rescheduleTime])
+  }, [supabase, client, name, phone, addr, rescheduleDate, rescheduleTime, onUpdate])
 
   // Send invoice via SMS
   const handleSendInvoiceSms = useCallback(async (inv: InvoiceRow) => {
