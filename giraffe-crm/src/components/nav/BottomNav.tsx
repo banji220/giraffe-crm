@@ -117,15 +117,18 @@ export default function BottomNav() {
   return (
     <nav className="lg:hidden fixed bottom-0 inset-x-0 z-50 max-w-2xl mx-auto bg-card border-t-2 border-foreground sm:border-x-2 sm:border-foreground">
       <ul className="grid grid-cols-5 items-end">
-        {TABS.map(({ id, href, label, Icon, center }) => {
+        {TABS.map(({ id, href, label, Icon, center }, idx) => {
           const active = id === activeId
           const count =
             id === 'today'   ? badges.today :
             id === 'deals'   ? badges.deals :
             id === 'clients' ? badges.clients : 0
+          // Hide right-border on the cell just before center and on center itself (dark bg acts as divider)
+          const nextIsCenter = TABS[idx + 1]?.center
+          const hideBorder = center || nextIsCenter || idx === TABS.length - 1
 
           return (
-            <li key={id} className="border-r-2 border-foreground last:border-r-0 relative">
+            <li key={id} className={`relative ${hideBorder ? '' : 'border-r-2 border-foreground'}`}>
               <button
                 onClick={() => handleTap({ id, href, label, Icon, center })}
                 className={`relative w-full flex flex-col items-center justify-center gap-1 press-brutal ${
