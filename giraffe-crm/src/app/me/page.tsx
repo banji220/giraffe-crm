@@ -22,6 +22,7 @@ import { buildDayRecords, computeStreaks, type DayRecord } from '@/lib/activity-
 import { createClient } from '@/lib/supabase/client'
 import { clearSessionBeacon } from '@/lib/sessionCookie'
 import { connectGoogleCalendar, isCalendarConnected } from '@/lib/google-calendar'
+import { toLocalDateKey } from '@/lib/local-date'
 import type { DailyStats, UserSettings } from '@/types/database'
 
 export default function MePage() {
@@ -55,7 +56,7 @@ function MeInner() {
   const router = useRouter()
   const supabase = useRef(createClient()).current
   // Recompute today's key on every render so midnight crossover works
-  const todayKey = new Date().toISOString().slice(0, 10)
+  const todayKey = toLocalDateKey(new Date())
   const [refreshTick, setRefreshTick] = useState(0)
 
   // Knock tracker
@@ -83,12 +84,12 @@ function MeInner() {
     const sunday = new Date(now)
     sunday.setDate(now.getDate() - dayOfWeek)
     sunday.setHours(0, 0, 0, 0)
-    const sundayKey = sunday.toISOString().slice(0, 10)
+    const sundayKey = toLocalDateKey(sunday)
 
     // Get heatmap range (last 365 days)
     const yearAgo = new Date(now)
     yearAgo.setDate(yearAgo.getDate() - 365)
-    const yearAgoKey = yearAgo.toISOString().slice(0, 10)
+    const yearAgoKey = toLocalDateKey(yearAgo)
 
     Promise.all([
       // Today's stats

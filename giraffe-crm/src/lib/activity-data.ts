@@ -124,7 +124,7 @@ export function buildDayRecords(
   const days: DayRecord[] = []
   const cursor = new Date(start)
   while (cursor <= today) {
-    const key = cursor.toISOString().slice(0, 10)
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}-${String(cursor.getDate()).padStart(2, '0')}`
     const row = map.get(key)
     days.push({
       date: new Date(cursor),

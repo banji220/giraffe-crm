@@ -12,6 +12,7 @@
 
 import { useEffect, useRef, useState, useMemo, useCallback, startTransition } from 'react'
 import Link from 'next/link'
+import { todayLocalKey } from '@/lib/local-date'
 import AuthGate from '@/components/auth/AuthGate'
 import PageHeader from '@/components/nav/PageHeader'
 import BottomNav from '@/components/nav/BottomNav'
@@ -58,7 +59,7 @@ export default function TodayPage() {
 
 function TodayInner() {
   const supabase = useRef(createClient()).current
-  const todayKey = useMemo(() => new Date().toISOString().slice(0, 10), [])
+  const todayKey = useMemo(() => todayLocalKey(), [])
 
   // ── CRM state ────────────────────────────────────────────────────────
   const [appts, setAppts] = useState<HouseRow[]>([])

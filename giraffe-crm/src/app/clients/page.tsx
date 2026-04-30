@@ -16,6 +16,7 @@ import BottomNav from '@/components/nav/BottomNav'
 import { createClient } from '@/lib/supabase/client'
 import { formatE164ForDisplay } from '@/lib/phone'
 import { updateCalendarEvent } from '@/lib/google-calendar'
+import { todayLocalKey, toLocalDateKey } from '@/lib/local-date'
 
 type ClientRow = {
   id: string
@@ -89,7 +90,7 @@ function ClientsInner() {
   const totalJobs = useMemo(() => clients.reduce((s, c) => s + (c.total_jobs ?? 0), 0), [clients])
 
   const recleanDue = useMemo(() => {
-    const today = new Date().toISOString().slice(0, 10)
+    const today = todayLocalKey()
     return clients.filter(c => c.reclean_due_at && c.reclean_due_at.slice(0, 10) <= today)
   }, [clients])
 
@@ -562,7 +563,7 @@ function ClientDetail({ client, onClose, onUpdate }: {
                           setRescheduleJobId(j.id)
                           if (j.scheduled_at) {
                             const d = new Date(j.scheduled_at)
-                            setRescheduleDate(d.toISOString().slice(0, 10))
+                            setRescheduleDate(toLocalDateKey(d))
                             setRescheduleTime(d.toTimeString().slice(0, 5))
                           } else {
                             setRescheduleDate('')

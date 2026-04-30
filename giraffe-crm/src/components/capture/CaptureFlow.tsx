@@ -19,6 +19,7 @@
 
 import { useState, useCallback, type ReactNode } from 'react'
 import { calculatePrice, formatPrice } from '@/lib/pricing'
+import { toLocalDateKey, todayLocalKey } from '@/lib/local-date'
 import StepFlow from '@/components/capture/StepFlow'
 import type { KnockOutcome, ServiceType } from '@/types/database'
 
@@ -73,7 +74,7 @@ function formatDateLabel(d: Date): string {
 }
 
 function toDateValue(d: Date): string {
-  return d.toISOString().slice(0, 10)
+  return toLocalDateKey(d)
 }
 
 // ── Note tags (one-tap chips) ───────────────────────────────────────
@@ -92,10 +93,7 @@ export default function CaptureFlow({ outcome, address, onSubmit, onClose }: Cap
   const [email, setEmail] = useState('')
 
   // Card 2 — WHEN (default to today — date is mandatory)
-  const [selectedDate, setSelectedDate] = useState(() => {
-    const d = new Date()
-    return d.toISOString().slice(0, 10)
-  })
+  const [selectedDate, setSelectedDate] = useState(() => todayLocalKey())
   const [selectedTime, setSelectedTime] = useState('10:00')
   const [showCustomTime, setShowCustomTime] = useState(false)
 
