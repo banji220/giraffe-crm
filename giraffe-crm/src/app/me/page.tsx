@@ -55,9 +55,7 @@ function getSuggestion(doors: number, target: number): string {
 function MeInner() {
   const router = useRouter()
   const supabase = useRef(createClient()).current
-  // Recompute today's key on every render so midnight crossover works
-  const todayKey = toLocalDateKey(new Date())
-  const [refreshTick, setRefreshTick] = useState(0)
+  const todayKeyRef = useRef(toLocalDateKey(new Date()))
 
   // Knock tracker
   const [doorsToday, setDoorsToday] = useState(0)
@@ -77,8 +75,14 @@ function MeInner() {
   const [calConnected, setCalConnected] = useState<boolean | null>(null)
   const [calConnecting, setCalConnecting] = useState(false)
 
-  useEffect(() => {
-    // Get weekly date range (Sun-Sat)
+  // Track if we're doing an optimistic update (skip DB overwrite)
+  const optimisticRef = useRef(false)
+
+  // ── Central data fetch — called on mount, focus, visibility, realtime ──
+  const loadData = useCallback(async () => {
+    const todayKey = toLocalDateKey(new Date())
+    todayKeyRef.current = todayKey
+
     const now = new Date()
     const dayOfWeek = now.getDay()
     const sunday = new Date(now)
@@ -86,67 +90,96 @@ function MeInner() {
     sunday.setHours(0, 0, 0, 0)
     const sundayKey = toLocalDateKey(sunday)
 
-    // Get heatmap range (last 365 days)
     const yearAgo = new Date(now)
     yearAgo.setDate(yearAgo.getDate() - 365)
     const yearAgoKey = toLocalDateKey(yearAgo)
 
-    Promise.all([
-      // Today's stats
+    const [statsRes, settingsRes, weekRes, heatmapRes, closesRes, calStatus] = await Promise.all([
       supabase.from('daily_stats' as any).select('*').eq('date', todayKey).maybeSingle() as unknown as Promise<{ data: DailyStats | null; error: any }>,
-      // Settings
       supabase.from('user_settings' as any).select('*').maybeSingle() as unknown as Promise<{ data: UserSettings | null; error: any }>,
-      // This week's stats (for weekly goal)
       supabase.from('daily_stats' as any).select('date, doors').gte('date', sundayKey).order('date') as unknown as Promise<{ data: { date: string; doors: number }[] | null; error: any }>,
-      // Heatmap data (last year) — include appointments for buildDayRecords
       supabase.from('daily_stats' as any).select('date, doors, conversations, leads, appointments, wins').gte('date', yearAgoKey).order('date') as unknown as Promise<{ data: { date: string; doors: number; conversations: number; leads: number; appointments: number; wins: number }[] | null; error: any }>,
-      // Total closes for badges
       supabase.from('houses').select('id', { count: 'exact', head: true }).eq('status', 'customer'),
-      // Google Calendar connection status
       isCalendarConnected().catch(() => false),
-    ]).then(([statsRes, settingsRes, weekRes, heatmapRes, closesRes, calStatus]) => {
-      startTransition(() => {
-        if (statsRes.data) setDoorsToday(statsRes.data.doors ?? 0)
+    ])
 
-        if (settingsRes.data) {
-          setDailyTarget(settingsRes.data.daily_target ?? 30)
-          setWeeklyTarget(settingsRes.data.weekly_target ?? 150)
-        }
+    // If we're mid-optimistic update, don't overwrite local state for today/weekly
+    if (optimisticRef.current) return
 
-        const weekData = weekRes.data ?? []
-        setDoorsThisWeek(weekData.reduce((sum, d) => sum + (d.doors ?? 0), 0))
+    startTransition(() => {
+      setDoorsToday(statsRes.data?.doors ?? 0)
 
-        const hmData = heatmapRes.data ?? []
-        setRawStats(hmData)
-
-        setTotalCloses(closesRes.count ?? 0)
-        setCalConnected(calStatus as boolean)
-      })
-    })
-  }, [supabase, todayKey, refreshTick])
-
-  // Refresh data when page becomes visible (user switches back from Map/other tabs)
-  useEffect(() => {
-    const handleVisibility = () => {
-      if (document.visibilityState === 'visible') {
-        setRefreshTick(t => t + 1)
+      if (settingsRes.data) {
+        setDailyTarget(settingsRes.data.daily_target ?? 30)
+        setWeeklyTarget(settingsRes.data.weekly_target ?? 150)
       }
+
+      const weekData = weekRes.data ?? []
+      setDoorsThisWeek(weekData.reduce((sum, d) => sum + (d.doors ?? 0), 0))
+
+      setRawStats(heatmapRes.data ?? [])
+      setTotalCloses(closesRes.count ?? 0)
+      setCalConnected(calStatus as boolean)
+    })
+  }, [supabase])
+
+  // ── Initial load ──────────────────────────────────────────────────
+  useEffect(() => { loadData() }, [loadData])
+
+  // ── Refresh on EVERY navigation, focus, visibility, and periodic ──
+  useEffect(() => {
+    // visibilitychange — user switched back from another app
+    const onVisibility = () => {
+      if (document.visibilityState === 'visible') loadData()
     }
-    document.addEventListener('visibilitychange', handleVisibility)
-    return () => document.removeEventListener('visibilitychange', handleVisibility)
-  }, [])
+    // focus — fires on SPA tab switch in PWAs and mobile browsers
+    const onFocus = () => loadData()
+    // pageshow — fires on back/forward navigation
+    const onPageShow = () => loadData()
+
+    document.addEventListener('visibilitychange', onVisibility)
+    window.addEventListener('focus', onFocus)
+    window.addEventListener('pageshow', onPageShow)
+
+    // Also poll every 30s as a safety net
+    const interval = setInterval(loadData, 30_000)
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      window.removeEventListener('focus', onFocus)
+      window.removeEventListener('pageshow', onPageShow)
+      clearInterval(interval)
+    }
+  }, [loadData])
+
+  // ── Supabase realtime — instant sync when map knocks update daily_stats ──
+  useEffect(() => {
+    const channel = supabase.channel('daily_stats_realtime')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'daily_stats',
+      }, () => {
+        // DB trigger just fired from a map knock — refetch everything
+        if (!optimisticRef.current) loadData()
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [supabase, loadData])
 
   // Convert raw Supabase stats → DayRecord[] for heatmap, streak, momentum
+  const todayKey = todayKeyRef.current
   const dayRecords: DayRecord[] = useMemo(() => {
     if (rawStats.length === 0) return buildDayRecords([], 365)
-    // Merge today's optimistic count into raw stats
-    const merged = rawStats.map(s => s.date === todayKey ? { ...s, doors: doorsToday } : s)
-    const hasToday = merged.some(s => s.date === todayKey)
+    const tk = toLocalDateKey(new Date())
+    const merged = rawStats.map(s => s.date === tk ? { ...s, doors: doorsToday } : s)
+    const hasToday = merged.some(s => s.date === tk)
     if (!hasToday && doorsToday > 0) {
-      merged.push({ date: todayKey, doors: doorsToday, conversations: 0, leads: 0, appointments: 0, wins: 0 })
+      merged.push({ date: tk, doors: doorsToday, conversations: 0, leads: 0, appointments: 0, wins: 0 })
     }
     return buildDayRecords(merged, 365)
-  }, [rawStats, doorsToday, todayKey])
+  }, [rawStats, doorsToday])
 
   const streaks = useMemo(() => computeStreaks(dayRecords), [dayRecords])
 
@@ -155,65 +188,85 @@ function MeInner() {
     doorsThisWeek,
     currentStreak: streaks.current,
     totalCloses,
-    preDawnKnocks: 0, // TODO: wire up when knock timestamps are available
+    preDawnKnocks: 0,
     lateNightKnocks: 0,
   }), [doorsToday, doorsThisWeek, streaks.current, totalCloses])
 
   // Log doors handler (supports positive and negative counts)
   const handleLog = useCallback(async (count: number) => {
+    const tk = todayKeyRef.current
+    optimisticRef.current = true
+
+    // Optimistic UI — both daily AND weekly update instantly
     setDoorsToday(prev => Math.max(0, prev + count))
     setDoorsThisWeek(prev => Math.max(0, prev + count))
 
-    // Update raw stats optimistically
+    // Update raw stats optimistically for heatmap
     setRawStats(prev => {
-      const existing = prev.find(d => d.date === todayKey)
+      const existing = prev.find(d => d.date === tk)
       if (existing) {
-        return prev.map(d => d.date === todayKey ? { ...d, doors: Math.max(0, d.doors + count) } : d)
+        return prev.map(d => d.date === tk ? { ...d, doors: Math.max(0, d.doors + count) } : d)
       }
       if (count > 0) {
-        return [...prev, { date: todayKey, doors: count, conversations: 0, leads: 0, appointments: 0, wins: 0 }]
+        return [...prev, { date: tk, doors: count, conversations: 0, leads: 0, appointments: 0, wins: 0 }]
       }
       return prev
     })
 
-    const { data: existing } = await (supabase.from('daily_stats' as any)
-      .select('*')
-      .eq('date', todayKey)
-      .maybeSingle() as unknown as Promise<{ data: DailyStats | null; error: any }>)
+    // Persist to DB
+    try {
+      const { data: existing } = await (supabase.from('daily_stats' as any)
+        .select('*')
+        .eq('date', tk)
+        .maybeSingle() as unknown as Promise<{ data: DailyStats | null; error: any }>)
 
-    if (existing) {
-      await (supabase.from('daily_stats' as any) as any)
-        .update({ doors: Math.max(0, existing.doors + count) })
-        .eq('id', existing.id)
-    } else if (count > 0) {
-      const { data: { user } } = await supabase.auth.getUser()
-      if (user) {
+      if (existing) {
         await (supabase.from('daily_stats' as any) as any)
-          .insert({ user_id: user.id, date: todayKey, doors: count })
+          .update({ doors: Math.max(0, existing.doors + count) })
+          .eq('id', existing.id)
+      } else if (count > 0) {
+        const { data: { user } } = await supabase.auth.getUser()
+        if (user) {
+          await (supabase.from('daily_stats' as any) as any)
+            .insert({ user_id: user.id, date: tk, doors: count })
+        }
       }
+    } finally {
+      optimisticRef.current = false
     }
-  }, [supabase, todayKey])
+  }, [supabase])
 
   // Reset today's count to zero
   const handleReset = useCallback(async () => {
-    setDoorsToday(0)
-    setDoorsThisWeek(prev => Math.max(0, prev - doorsToday))
+    const tk = todayKeyRef.current
+    optimisticRef.current = true
+
+    // Capture current doorsToday for weekly subtraction via functional update
+    setDoorsToday(prev => {
+      // Schedule weekly subtraction with the actual current value
+      setDoorsThisWeek(wk => Math.max(0, wk - prev))
+      return 0
+    })
 
     setRawStats(prev =>
-      prev.map(d => d.date === todayKey ? { ...d, doors: 0 } : d)
+      prev.map(d => d.date === tk ? { ...d, doors: 0 } : d)
     )
 
-    const { data: existing } = await (supabase.from('daily_stats' as any)
-      .select('id')
-      .eq('date', todayKey)
-      .maybeSingle() as unknown as Promise<{ data: { id: string } | null; error: any }>)
+    try {
+      const { data: existing } = await (supabase.from('daily_stats' as any)
+        .select('id')
+        .eq('date', tk)
+        .maybeSingle() as unknown as Promise<{ data: { id: string } | null; error: any }>)
 
-    if (existing) {
-      await (supabase.from('daily_stats' as any) as any)
-        .update({ doors: 0 })
-        .eq('id', existing.id)
+      if (existing) {
+        await (supabase.from('daily_stats' as any) as any)
+          .update({ doors: 0 })
+          .eq('id', existing.id)
+      }
+    } finally {
+      optimisticRef.current = false
     }
-  }, [supabase, todayKey, doorsToday])
+  }, [supabase])
 
   // Daily target change handler — persist + auto-update weekly (daily × 5)
   const handleDailyTargetChange = useCallback(async (target: number) => {
