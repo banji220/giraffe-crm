@@ -17,9 +17,11 @@ const Zap = ({ className, strokeWidth = 2 }: IconProps) => (
     <path d="M13 2 3 14h9l-1 8 10-12h-9l1-8z" />
   </svg>
 )
-const Target = ({ className, strokeWidth = 2 }: IconProps) => (
+const Compass = ({ className, strokeWidth = 2 }: IconProps) => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round" className={className} aria-hidden>
-    <circle cx="12" cy="12" r="10" /><circle cx="12" cy="12" r="6" /><circle cx="12" cy="12" r="2" />
+    <circle cx="12" cy="12" r="10" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" fill="currentColor" opacity="0.15" stroke="none" />
+    <polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76" />
   </svg>
 )
 const MapIcon = ({ className, strokeWidth = 2 }: IconProps) => (
@@ -40,7 +42,7 @@ const User = ({ className, strokeWidth = 2 }: IconProps) => (
   </svg>
 )
 
-type TabId = 'today' | 'deals' | 'map' | 'clients' | 'me'
+type TabId = 'today' | 'next' | 'map' | 'clients' | 'me'
 
 interface Tab {
   id: TabId
@@ -52,7 +54,7 @@ interface Tab {
 
 const TABS: Tab[] = [
   { id: 'today',   href: '/today',   label: 'Today',   Icon: Zap },
-  { id: 'deals',   href: '/deals',   label: 'Deals',   Icon: Target },
+  { id: 'next',    href: '/next',    label: 'Next',    Icon: Compass },
   { id: 'map',     href: '/map',     label: 'Map',     Icon: MapIcon, center: true },
   { id: 'clients', href: '/clients', label: 'Clients', Icon: Users },
   { id: 'me',      href: '/me',      label: 'Me',      Icon: User },
@@ -60,7 +62,7 @@ const TABS: Tab[] = [
 
 interface BadgeCounts {
   today: number
-  deals: number
+  next: number
   clients: number
 }
 
@@ -68,7 +70,7 @@ export default function BottomNav() {
   const pathname = usePathname()
   const router = useRouter()
   const supabase = useRef(createClient()).current
-  const [badges, setBadges] = useState<BadgeCounts>({ today: 0, deals: 0, clients: 0 })
+  const [badges, setBadges] = useState<BadgeCounts>({ today: 0, next: 0, clients: 0 })
 
   const activeId: TabId | null = (() => {
     if (!pathname) return null
@@ -99,7 +101,7 @@ export default function BottomNav() {
       if (cancelled) return
       setBadges({
         today:   followupsRes.count ?? 0,
-        deals:   unsignedRes.count ?? 0,
+        next:    unsignedRes.count ?? 0,
         clients: recleanRes.count ?? 0,
       })
     }
@@ -121,7 +123,7 @@ export default function BottomNav() {
           const active = id === activeId
           const count =
             id === 'today'   ? badges.today :
-            id === 'deals'   ? badges.deals :
+            id === 'next'    ? badges.next :
             id === 'clients' ? badges.clients : 0
           // Hide right-border on the cell just before center and on center itself (dark bg acts as divider)
           const nextIsCenter = TABS[idx + 1]?.center
